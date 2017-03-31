@@ -1427,6 +1427,7 @@ class StaticResolver(object):
         self.site_id = site_id
         # Go get the main URL
         try:
+            # if casting to int throws error we assume that given idsite is an siteUuid
             int(self.site_id)
             site = piwik.call_api(
                 'SitesManager.getSiteFromId', idSite=self.site_id
