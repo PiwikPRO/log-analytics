@@ -6,6 +6,7 @@ import re
 
 import import_logs
 
+
 # utility functions
 def add_junk_to_file(path):
     file = open(path)
@@ -73,7 +74,7 @@ def test_format_detection():
     def _test_junk(format_name, log_file = None):
         if log_file is None:
             log_file = 'logs/%s.log' % format_name
-        
+
         tmp_path = add_junk_to_file(log_file)
 
         file = open(tmp_path)
@@ -205,6 +206,15 @@ class Recorder(object):
     @classmethod
     def add_hits(cls, hits):
         cls.recorders.extend(hits)
+
+class Piwik(object):
+    """Mock piwik api requests for StaticResolver tests"""
+    def call_api(cls, method, **kwargs):
+        return {
+                 'idsite': '12345',
+                 'main_url': 'http://example.com',
+                 'site_uuid': '194edb22-394a-48e5-aed8-0797ab29d2ae',
+             }
 
 def test_replay_tracking_arguments():
     """Test data parsing from sample log file."""
@@ -837,3 +847,19 @@ def test_custom_log_date_format_option():
     hits = [hit.__dict__ for hit in Recorder.recorders]
 
     assert hits[0]['date'] == datetime.datetime(2012, 2, 10, 16, 42, 7)
+
+def test_static_resolver_with_uuid_mapped_to_idsite():
+
+    import_logs.piwik = Piwik()
+    import_logs.stats = import_logs.Statistics()
+    import_logs.resolver = import_logs.StaticResolver("194edb22-394a-48e5-aed8-0797ab29d2ae")
+
+    assert "12345" in import_logs.stats.piwik_sites
+
+def test_static_resolver_with_idsite():
+
+    import_logs.piwik = Piwik()
+    import_logs.stats = import_logs.Statistics()
+    import_logs.resolver = import_logs.StaticResolver("12345")
+
+    assert "12345" in import_logs.stats.piwik_sites

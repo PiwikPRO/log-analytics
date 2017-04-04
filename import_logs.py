@@ -1300,7 +1300,7 @@ class Piwik(object):
 
         if auth_user is not None:
             base64string = base64.encodestring('%s:%s' % (auth_user, auth_password)).replace('\n', '')
-            request.add_header("Authorization", "Basic %s" % base64string)        
+            request.add_header("Authorization", "Basic %s" % base64string)
 
         opener = urllib2.build_opener(Piwik.RedirectHandlerWithLogging())
         response = opener.open(request, timeout = timeout)
@@ -1426,14 +1426,24 @@ class StaticResolver(object):
     def __init__(self, site_id):
         self.site_id = site_id
         # Go get the main URL
-        site = piwik.call_api(
-            'SitesManager.getSiteFromId', idSite=self.site_id
-        )
+        try:
+            # if casting to int throws error we assume that given idsite is an siteUuid
+            int(self.site_id)
+            site = piwik.call_api(
+                'SitesManager.getSiteFromId', idSite=self.site_id
+            )
+        except ValueError:
+            site = piwik.call_api(
+                'SitesManager.getSiteFromUuid', siteUuid=self.site_id
+            )
+
         if site.get('result') == 'error':
             fatal_error(
                 "cannot get the main URL of this site: %s" % site.get('message')
             )
         self._main_url = site['main_url']
+        self.site_id = site['idsite']
+
         stats.piwik_sites.add(self.site_id)
 
     def resolve(self, hit):
@@ -1709,11 +1719,11 @@ class Recorder(object):
         if config.options.replay_tracking:
             # prevent request to be force recorded when option replay-tracking
             args['rec'] = '0'
-            
+
         # idsite is already determined by resolver
         if 'idsite' in hit.args:
             del hit.args['idsite']
-            
+
         args.update(hit.args)
 
         if hit.is_download:
@@ -1727,7 +1737,7 @@ class Recorder(object):
 				hit.status,
 				config.options.title_category_delimiter,
 				urllib.quote(args['url'], ''),
-				("%sFrom = %s" % ( 
+				("%sFrom = %s" % (
 					config.options.title_category_delimiter,
 					urllib.quote(args['urlref'], '')
 				) if args['urlref'] != ''  else '')
@@ -1799,7 +1809,7 @@ class Recorder(object):
                         logging.info("tracker response:\n%s" % response)
 
                     response = {}
-                
+
                 if ('invalid_indices' in response and isinstance(response['invalid_indices'], list) and
                     response['invalid_indices']):
                     invalid_count = len(response['invalid_indices'])
