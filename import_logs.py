@@ -1365,7 +1365,7 @@ class Piwik(object):
 #        logging.debug('%s' % final_args)
 #        logging.debug('%s' % url)
 
-        res = Piwik._call('/', final_args, url=url)
+        res = Piwik._call('/index.php', final_args, url=url)
 
 
         try:
