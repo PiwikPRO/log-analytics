@@ -1485,6 +1485,9 @@ class DynamicResolver(object):
         if config.options.replay_tracking:
             # get existing sites
             self._cache['sites'] = piwik.call_api('SitesManager.getAllSites')
+            for f in self._cache['sites'].keys():
+                # duplicate the rows but using site_uuid as key so cache is searchable by site_uuid
+                self._cache['sites'][self._cache['sites'][f]['site_uuid']] = self._cache['sites'][f]
 
     def _get_site_id_from_hit_host(self, hit):
         return piwik.call_api(
