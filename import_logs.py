@@ -679,12 +679,13 @@ class Configuration(object):
         option_parser.add_option(
             '--replay-tracking', dest='replay_tracking',
             action='store_true', default=False,
-            help="Replay piwik.php requests found in custom logs (only piwik.php requests expected). \nSee http://piwik.org/faq/how-to/faq_17033/"
+            help="Replay requests to the Tracker found in custom logs (only piwik.php, ppms.php, js/ or js/tracker.php requests expected)."
         )
         option_parser.add_option(
-            '--replay-tracking-expected-tracker-file', dest='replay_tracking_expected_tracker_file', default='piwik.php',
+            '--replay-tracking-expected-tracker-file', dest='replay_tracking_expected_tracker_file',
+            default=('piwik.php', 'ppms.php', '/js/', '/js/tracker.php'),
             help="The expected suffix for tracking request paths. Only logs whose paths end with this will be imported. Defaults "
-            "to 'piwik.php' so only requests to the piwik.php file will be imported."
+            "to 'piwik.php', 'ppms.php', 'js/' or 'js/tracker.php' so only requests to those files will be imported."
         )
         option_parser.add_option(
             '--output', dest='output',
@@ -1584,7 +1585,7 @@ class DynamicResolver(object):
         If replay_tracking option is enabled, call _resolve_when_replay_tracking.
         """
         if config.options.replay_tracking:
-            # We only consider requests with piwik.php which don't need host to be imported
+            # We only consider requests with piwik.php, ppms.php, js/ or js/tracker.php which don't need host to be imported
             return self._resolve_when_replay_tracking(hit)
         else:
             # Workaround for empty Host bug issue #126
@@ -2347,9 +2348,9 @@ class Parser(object):
                 hit.date -= datetime.timedelta(hours=timezone/100)
 
             if config.options.replay_tracking:
-                # we need a query string and we only consider requests with piwik.php
+                # we need a query string and we only consider requests with piwik.php, ppms.php, js/ or js/tracker.php
                 if not hit.query_string or not hit.path.lower().endswith(config.options.replay_tracking_expected_tracker_file):
-                    invalid_line(line, 'no query string, or ' + hit.path.lower() + ' does not end with piwik.php')
+                    invalid_line(line, 'no query string, or ' + hit.path.lower() + ' does not end with piwik.php, ppms.php, js/ or js/tracker.php')
                     continue
 
                 query_arguments = urlparse.parse_qs(hit.query_string)
