@@ -1292,8 +1292,8 @@ class Piwik(object):
         elif not isinstance(data, basestring) and headers['Content-type'] == 'application/json':
             data = json.dumps(data)
 
-            if args:
-                path = path + '?' + urllib.urlencode(args)
+        if args:
+            path = path + '?' + urllib.urlencode(args)
 
         headers['User-Agent'] = 'Piwik/LogImport'
 
@@ -1303,6 +1303,13 @@ class Piwik(object):
             timeout = None # the config global object may not be created at this point
 
         request = urllib2.Request(url + path, data, headers)
+        logging.debug("Request url '%s'" % url)
+        logging.debug("Request path '%s'" % path)
+        logging.debug("Request query args '%s'" % args)
+        logging.debug("Request headers '%s'" % headers)
+        logging.debug("Request data '%s'" % data)
+        logging.debug("Request to '%s'" % request.get_full_url())
+
 
         # Handle basic auth if auth_user set
         try:
@@ -1362,9 +1369,6 @@ class Piwik(object):
                 final_args.append((key, value))
 
 
-#        logging.debug('%s' % final_args)
-#        logging.debug('%s' % url)
-
         res = Piwik._call('/index.php', final_args, url=url)
 
 
@@ -1386,7 +1390,7 @@ class Piwik(object):
                     if on_failure is not None:
                         error_message = on_failure(response, kwargs.get('data'))
                     else:
-                        error_message = "didn't receive the expected response. Response was %s " % response
+                        error_message = "didn't receive the expected response '%s'. Response was '%s' " % expected_response, response
 
                     raise urllib2.URLError(error_message)
                 return response
