@@ -4,6 +4,7 @@ set -e
 
 prefix="split_a"
 token_auth=""
+domain=""
 
 function log {
     logger -t $0[$$] "${1?empty msg}"
@@ -46,8 +47,8 @@ for i in $(ls ${prefix}*); do
     done
 
     log "Started processing file ${i?emty file}"
-    python piwik-log-analytics/import_logs.py ${i?empty file} \
-		--url=https://piwik.becop.nl \
+    python import_logs.py ${i?empty file} \
+		--url=https://${domain?empty domain} \
 		--replay-tracking \
 		--token-auth=${token_auth?empty token}\
 		--recorders=1 \
