@@ -1,5 +1,7 @@
 # Piwik Server Log Analytics
 
+**This version of Log Analytics supports only replay tracking for Piwik and new Trucker. Server Log Analytics does not work.**
+
 Import your server logs in Piwik with this powerful and easy to use tool.
 
 ## Requirements
