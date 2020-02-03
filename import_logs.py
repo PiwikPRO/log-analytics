@@ -474,16 +474,6 @@ class Configuration(object):
                    "              Please send your suggestions or successful user story to hello@piwik.org "
         )
 
-        # Basic auth user
-        option_parser.add_option(
-            '--auth-user', dest='auth_user',
-            help="Basic auth user",
-        )
-        # Basic auth password
-        option_parser.add_option(
-            '--auth-password', dest='auth_password',
-            help="Basic auth password",
-        )
         option_parser.add_option(
             '--debug', '-d', dest='debug', action='count', default=0,
             help="Enable debug output (specify multiple times for more verbose)",
@@ -505,11 +495,6 @@ class Configuration(object):
             help="REQUIRED Your Piwik server URL, eg. http://example.com/piwik/ or http://analytics.example.net",
         )
         option_parser.add_option(
-            '--api-url', dest='piwik_api_url',
-            help="This URL will be used to send API requests (use it if your tracker URL differs from UI/API url), "
-            "eg. http://other-example.com/piwik/ or http://analytics-api.example.net",
-        )
-        option_parser.add_option(
             '--dry-run', dest='dry_run',
             action='store_true', default=False,
             help="Perform a trial run with no tracking data being inserted into Piwik",
@@ -525,23 +510,10 @@ class Configuration(object):
             help="Change the default progress delay"
         )
         option_parser.add_option(
-            '--add-sites-new-hosts', dest='add_sites_new_hosts',
-            action='store_true', default=False,
-            help="When a hostname is found in the log file, but not matched to any website "
-            "in Piwik, automatically create a new website in Piwik with this hostname to "
-            "import the logs"
-        )
-        option_parser.add_option(
             '--idsite', dest='site_id',
             help= ("When specified, "
                    "data in the specified log files will be tracked for this Piwik site ID."
                    " The script will not auto-detect the website based on the log line hostname (new websites will not be automatically created).")
-        )
-        option_parser.add_option(
-            '--idsite-fallback', dest='site_id_fallback',
-            help="Default Piwik site ID to use if the hostname doesn't match any "
-            "known Website's URL. New websites will not be automatically created. "
-            "                         Used only if --add-sites-new-hosts or --idsite are not set",
         )
         default_config = os.path.abspath(
             os.path.join(os.path.dirname(__file__),
@@ -554,14 +526,6 @@ class Configuration(object):
                 "Piwik will read the configuration file (default: %default) to "
                 "fetch the Super User token_auth from the config file. "
             )
-        )
-        option_parser.add_option(
-            '--login', dest='login',
-            help="You can manually specify the Piwik Super User login"
-        )
-        option_parser.add_option(
-            '--password', dest='password',
-            help="You can manually specify the Piwik Super User password"
         )
         option_parser.add_option(
             '--token-auth', dest='piwik_token_auth',
@@ -900,20 +864,8 @@ class Configuration(object):
 
         if not (self.options.piwik_url.startswith('http://') or self.options.piwik_url.startswith('https://')):
             self.options.piwik_url = 'http://' + self.options.piwik_url
-        logging.debug('Piwik Tracker API URL is: %s', self.options.piwik_url)
+        logging.debug('Piwik URL is: %s', self.options.piwik_url)
 
-        if not self.options.piwik_api_url:
-            self.options.piwik_api_url = self.options.piwik_url
-
-        if not (self.options.piwik_api_url.startswith('http://') or self.options.piwik_api_url.startswith('https://')):
-            self.options.piwik_api_url = 'http://' + self.options.piwik_api_url
-        logging.debug('Piwik Analytics API URL is: %s', self.options.piwik_api_url)
-
-        if not self.options.piwik_token_auth:
-            try:
-                self.options.piwik_token_auth = self._get_token_auth()
-            except Piwik.Error, e:
-                fatal_error(e)
         logging.debug('Authentication token token_auth is: %s', self.options.piwik_token_auth)
 
         if self.options.recorders < 1:
@@ -932,91 +884,6 @@ class Configuration(object):
 
     def __init__(self):
         self._parse_args(self._create_parser())
-
-    def _get_token_auth(self):
-        """
-        If the token auth is not specified in the options, get it from Piwik.
-        """
-        # Get superuser login/password from the options.
-        logging.debug('No token-auth specified')
-
-        if self.options.login and self.options.password:
-            piwik_login = self.options.login
-            piwik_password = hashlib.md5(self.options.password).hexdigest()
-
-            logging.debug('Using credentials: (login = %s, password = %s)', piwik_login, piwik_password)
-            try:
-                api_result = piwik.call_api('UsersManager.getTokenAuth',
-                    userLogin=piwik_login,
-                    md5Password=piwik_password,
-                    _token_auth='',
-                    _url=self.options.piwik_api_url,
-                )
-            except urllib2.URLError, e:
-                fatal_error('error when fetching token_auth from the API: %s' % e)
-
-            try:
-                return api_result['value']
-            except KeyError:
-                # Happens when the credentials are invalid.
-                message = api_result.get('message')
-                fatal_error(
-                    'error fetching authentication token token_auth%s' % (
-                    ': %s' % message if message else '')
-                )
-        else:
-            # Fallback to the given (or default) configuration file, then
-            # get the token from the API.
-            logging.debug(
-                'No credentials specified, reading them from "%s"',
-                self.options.config_file,
-            )
-            config_file = ConfigParser.RawConfigParser()
-            success = len(config_file.read(self.options.config_file)) > 0
-            if not success:
-                fatal_error(
-                    "the configuration file" + self.options.config_file + " could not be read. Please check permission. This file must be readable by the user running this script to get the authentication token"
-                )
-
-            updatetokenfile = os.path.abspath(
-                os.path.join(os.path.dirname(__file__),
-                    '../../misc/cron/updatetoken.php'),
-            )
-
-            phpBinary = 'php'
-
-            is_windows = sys.platform.startswith('win')
-            if is_windows:
-                try:
-                    processWin = subprocess.Popen('where php.exe', stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    [stdout, stderr] = processWin.communicate()
-                    if processWin.returncode == 0:
-                        phpBinary = stdout.strip()
-                    else:
-                        fatal_error("We couldn't detect PHP. It might help to add your php.exe to the path or alternatively run the importer using the --login and --password option")
-                except:
-                    fatal_error("We couldn't detect PHP. You can run the importer using the --login and --password option to fix this issue")
-
-            command = [phpBinary, updatetokenfile]
-            if self.options.enable_testmode:
-                command.append('--testmode')
-
-            hostname = urlparse.urlparse( self.options.piwik_url ).hostname
-            command.append('--piwik-domain=' + hostname )
-
-            command = subprocess.list2cmdline(command)
-
-#            logging.debug(command);
-
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-            [stdout, stderr] = process.communicate()
-            if process.returncode != 0:
-                fatal_error("`" + command + "` failed with error: " + stderr + ".\nReponse code was: " + str(process.returncode) + ". You can alternatively run the importer using the --login and --password option")
-
-            filename = stdout
-            credentials = open(filename, 'r').readline()
-            credentials = credentials.split('\t')
-            return credentials[1]
 
     def get_resolver(self):
         if self.options.site_id:
@@ -1058,8 +925,6 @@ class Statistics(object):
         self.time_stop = None
 
         self.piwik_sites = set()                # sites ID
-        self.piwik_sites_created = []           # (hostname, site ID)
-        self.piwik_sites_ignored = set()        # hostname
 
         self.count_lines_parsed = self.Counter()
         self.count_lines_recorded = self.Counter()
@@ -1154,12 +1019,6 @@ Website import summary
 ----------------------
 
     %(count_lines_recorded)d requests imported to %(total_sites)d sites
-        %(total_sites_existing)d sites already existed
-        %(total_sites_created)d sites were created:
-%(sites_created)s
-    %(total_sites_ignored)d distinct hostnames did not match any existing site:
-%(sites_ignored)s
-%(sites_ignored_tips)s
 
 Performance summary
 -------------------
@@ -1195,35 +1054,12 @@ Processing your log data
     'count_lines_no_site': self.count_lines_no_site.value,
     'count_lines_hostname_skipped': self.count_lines_hostname_skipped.value,
     'total_sites': len(self.piwik_sites),
-    'total_sites_existing': len(self.piwik_sites - set(site_id for hostname, site_id in self.piwik_sites_created)),
-    'total_sites_created': len(self.piwik_sites_created),
-    'sites_created': self._indent_text(
-            ['%s (ID: %d)' % (hostname, site_id) for hostname, site_id in self.piwik_sites_created],
-            level=3,
-        ),
-    'total_sites_ignored': len(self.piwik_sites_ignored),
-    'sites_ignored': self._indent_text(
-            self.piwik_sites_ignored, level=3,
-        ),
-    'sites_ignored_tips': '''
-        TIPs:
-         - if one of these hosts is an alias host for one of the websites
-           in Piwik, you can add this host as an "Alias URL" in Settings > Websites.
-         - use --add-sites-new-hosts if you wish to automatically create
-           one website for each of these hosts in Piwik rather than discarding
-           these requests.
-         - use --idsite-fallback to force all these log lines with a new hostname
-           to be recorded in a specific idsite (for example for troubleshooting/visualizing the data)
-         - use --idsite to force all lines in the specified log files
-           to be all recorded in the specified idsite
-         - or you can also manually create a new Website in Piwik with the URL set to this hostname
-''' if self.piwik_sites_ignored else '',
     'total_time': self.time_stop - self.time_start,
     'speed_recording': self._round_value(self._compute_speed(
             self.count_lines_recorded.value,
             self.time_start, self.time_stop,
         )),
-    'url': config.options.piwik_api_url,
+    'url': config.options.piwik_url,
     'invalid_lines': invalid_lines_summary
 }
 
@@ -1313,12 +1149,8 @@ class Piwik(object):
 
 
         # Handle basic auth if auth_user set
-        try:
-            auth_user = config.options.auth_user
-            auth_password = config.options.auth_password
-        except:
-            auth_user = None
-            auth_password = None
+        auth_user = None
+        auth_password = None
 
         if auth_user is not None:
             base64string = base64.encodestring('%s:%s' % (auth_user, auth_password)).replace('\n', '')
@@ -1329,54 +1161,6 @@ class Piwik(object):
         result = response.read()
         response.close()
         return result
-
-    @staticmethod
-    def _call_api(method, **kwargs):
-        """
-        Make a request to the Piwik API taking care of authentication, body
-        formatting, etc.
-        """
-        args = {
-            'module' : 'API',
-            'format' : 'json2',
-            'method' : method,
-            'filter_limit' : '-1',
-        }
-        # token_auth, by default, is taken from config.
-        token_auth = kwargs.pop('_token_auth', None)
-        if token_auth is None:
-            token_auth = config.options.piwik_token_auth
-        if token_auth:
-            args['token_auth'] = token_auth
-
-        url = kwargs.pop('_url', None)
-        if url is None:
-            url = config.options.piwik_api_url
-
-
-        if kwargs:
-            args.update(kwargs)
-
-        # Convert lists into appropriate format.
-        # See: http://developer.piwik.org/api-reference/reporting-api#passing-an-array-of-data-as-a-parameter
-        # Warning: we have to pass the parameters in order: foo[0], foo[1], foo[2]
-        # and not foo[1], foo[0], foo[2] (it will break Piwik otherwise.)
-        final_args = []
-        for key, value in args.iteritems():
-            if isinstance(value, (list, tuple)):
-                for index, obj in enumerate(value):
-                    final_args.append(('%s[%d]' % (key, index), obj))
-            else:
-                final_args.append((key, value))
-
-
-        res = Piwik._call('/index.php', final_args, url=url)
-
-
-        try:
-            return json.loads(res)
-        except ValueError:
-            raise urllib2.URLError('Piwik returned an invalid response: ' + res)
 
     @staticmethod
     def _call_wrapper(func, expected_response, on_failure, *args, **kwargs):
@@ -1434,10 +1218,6 @@ class Piwik(object):
         return cls._call_wrapper(cls._call, expected_content, on_failure, path, args, headers,
                                     data=data)
 
-    @classmethod
-    def call_api(cls, method, **kwargs):
-        return cls._call_wrapper(cls._call_api, None, None, method, **kwargs)
-
 ##
 ## Resolvers.
 ##
@@ -1451,29 +1231,11 @@ class StaticResolver(object):
 
     def __init__(self, site_id):
         self.site_id = site_id
-        # Go get the main URL
-        try:
-            # if casting to int throws error we assume that given idsite is an siteUuid
-            int(self.site_id)
-            site = piwik.call_api(
-                'SitesManager.getSiteFromId', idSite=self.site_id
-            )
-        except ValueError:
-            site = piwik.call_api(
-                'SitesManager.getSiteFromUuid', siteUuid=self.site_id
-            )
-
-        if site.get('result') == 'error':
-            fatal_error(
-                "cannot get the main URL of this site: %s" % site.get('message')
-            )
-        self._main_url = site['main_url']
-        self.site_id = site['idsite']
 
         stats.piwik_sites.add(self.site_id)
 
     def resolve(self, hit):
-        return (self.site_id, self._main_url)
+        return (self.site_id)
 
     def check_format(self, format):
         pass
@@ -1483,115 +1245,21 @@ class DynamicResolver(object):
     Use Piwik API to determine the site ID.
     """
 
-    _add_site_lock = threading.Lock()
-
-    def __init__(self):
-        self._cache = {}
-        if config.options.replay_tracking:
-            # get existing sites
-            self._cache['sites'] = piwik.call_api('SitesManager.getAllSites')
-            for f in self._cache['sites'].keys():
-                # duplicate the rows but using site_uuid as key so cache is searchable by site_uuid
-                self._cache['sites'][self._cache['sites'][f]['site_uuid']] = self._cache['sites'][f]
-
-    def _get_site_id_from_hit_host(self, hit):
-        return piwik.call_api(
-            'SitesManager.getSitesIdFromSiteUrl',
-            url=hit.host,
-        )
-
-    def _add_site(self, hit):
-        main_url = 'http://' + hit.host
-        DynamicResolver._add_site_lock.acquire()
-
-        try:
-            # After we obtain the lock, make sure the site hasn't already been created.
-            res = self._get_site_id_from_hit_host(hit)
-            if res:
-                return res[0]['idsite']
-
-            # The site doesn't exist.
-            logging.debug('No Piwik site found for the hostname: %s', hit.host)
-            if config.options.site_id_fallback is not None:
-                logging.debug('Using default site for hostname: %s', hit.host)
-                return config.options.site_id_fallback
-            elif config.options.add_sites_new_hosts:
-                if config.options.dry_run:
-                    # Let's just return a fake ID.
-                    return 0
-                logging.debug('Creating a Piwik site for hostname %s', hit.host)
-                result = piwik.call_api(
-                    'SitesManager.addSite',
-                    siteName=hit.host,
-                    urls=[main_url],
-                )
-                if result.get('result') == 'error':
-                    logging.error("Couldn't create a Piwik site for host %s: %s",
-                        hit.host, result.get('message'),
-                    )
-                    return None
-                else:
-                    site_id = result['value']
-                    stats.piwik_sites_created.append((hit.host, site_id))
-                    return site_id
-            else:
-                # The site doesn't exist, we don't want to create new sites and
-                # there's no default site ID. We thus have to ignore this hit.
-                return None
-        finally:
-            DynamicResolver._add_site_lock.release()
-
-    def _resolve(self, hit):
-        res = self._get_site_id_from_hit_host(hit)
-        if res:
-            # The site already exists.
-            site_id = res[0]['idsite']
-        else:
-            site_id = self._add_site(hit)
-        if site_id is not None:
-            stats.piwik_sites.add(site_id)
-        return site_id
-
     def _resolve_when_replay_tracking(self, hit):
         """
         If parsed site ID found in the _cache['sites'] return site ID and main_url,
         otherwise return (None, None) tuple.
         """
         site_id = hit.args['idsite']
-        if site_id in self._cache['sites']:
-            stats.piwik_sites.add(site_id)
-            return (site_id, self._cache['sites'][site_id]['main_url'])
-        else:
-            return (None, None)
-
-    def _resolve_by_host(self, hit):
-        """
-        Returns the site ID and site URL for a hit based on the hostname.
-        """
-        try:
-            site_id = self._cache[hit.host]
-        except KeyError:
-            logging.debug(
-                'Site ID for hostname %s not in cache', hit.host
-            )
-            site_id = self._resolve(hit)
-            logging.debug('Site ID for hostname %s: %s', hit.host, site_id)
-            self._cache[hit.host] = site_id
-        return (site_id, 'http://' + hit.host)
+        return site_id
 
     def resolve(self, hit):
         """
         Return the site ID from the cache if found, otherwise call _resolve.
         If replay_tracking option is enabled, call _resolve_when_replay_tracking.
         """
-        if config.options.replay_tracking:
-            # We only consider requests with piwik.php, ppms.php, js/ or js/tracker.php which don't need host to be imported
-            return self._resolve_when_replay_tracking(hit)
-        else:
-            # Workaround for empty Host bug issue #126
-            if hit.host.strip() == '':
-                hit.host = 'no-hostname-found-in-log'
-            return self._resolve_by_host(hit)
+        # We only consider requests with piwik.php, ppms.php, js/ or js/tracker.php which don't need host to be imported
+        return self._resolve_when_replay_tracking(hit)
 
     def check_format(self, format):
         if config.options.replay_tracking:
@@ -1707,25 +1375,13 @@ class Recorder(object):
         """
         Returns the args used in tracking a hit, without the token_auth.
         """
-        site_id, main_url = resolver.resolve(hit)
-        if site_id is None:
-            # This hit doesn't match any known Piwik site.
-            if config.options.replay_tracking:
-                stats.piwik_sites_ignored.add('unrecognized site ID %s' % hit.args.get('idsite'))
-            else:
-                stats.piwik_sites_ignored.add(hit.host)
-            stats.count_lines_no_site.increment()
-            return
+        site_id = resolver.resolve(hit)
 
         stats.dates_recorded.add(hit.date.date())
 
         path = hit.path
         if hit.query_string and not config.options.strip_query_string:
             path += config.options.query_string_delimiter + hit.query_string
-
-        # only prepend main url / host if it's a path
-        url_prefix = self._get_host_with_protocol(hit.host, main_url) if hasattr(hit, 'host') else main_url
-        url = (url_prefix if path.startswith('/') else '') + path[:1024]
 
         # handle custom variables before generating args dict
         if config.options.enable_bots:
@@ -1739,8 +1395,6 @@ class Recorder(object):
         args = {
             'rec': '1',
             'apiv': '1',
-            'url': url.encode('utf8'),
-            'urlref': hit.referrer[:1024].encode('utf8'),
             'cip': hit.ip,
             'cdt': self.date_to_piwik(hit.date),
             'idsite': site_id,
@@ -1758,22 +1412,8 @@ class Recorder(object):
 
         args.update(hit.args)
 
-        if hit.is_download:
-            args['download'] = args['url']
-
         if config.options.enable_bots:
             args['bots'] = '1'
-
-        if hit.is_error or hit.is_redirect:
-			args['action_name'] = '%s%sURL = %s%s' % (
-				hit.status,
-				config.options.title_category_delimiter,
-				urllib.quote(args['url'], ''),
-				("%sFrom = %s" % (
-					config.options.title_category_delimiter,
-					urllib.quote(args['urlref'], '')
-				) if args['urlref'] != ''  else '')
-			)
 
         if hit.generation_time_milli > 0:
             args['gt_ms'] = int(hit.generation_time_milli)
