@@ -900,4 +900,4 @@ def test_static_resolver_with_idsite():
     import_logs.stats = import_logs.Statistics()
     import_logs.resolver = import_logs.StaticResolver("12345")
 
-    assert "12345" in import_logs.stats.piwik_sites
+    assert "12345" == import_logs.resolver.site_id

@@ -924,8 +924,6 @@ class Statistics(object):
         self.time_start = None
         self.time_stop = None
 
-        self.piwik_sites = set()                # sites ID
-
         self.count_lines_parsed = self.Counter()
         self.count_lines_recorded = self.Counter()
 
@@ -1015,11 +1013,6 @@ The following lines were not tracked by Piwik, either due to a malformed tracker
         %(count_lines_static)d requests to static resources (css, js, images, ico, ttf...)
         %(count_lines_skipped_downloads)d requests to file downloads did not match any --download-extensions
 
-Website import summary
-----------------------
-
-    %(count_lines_recorded)d requests imported to %(total_sites)d sites
-
 Performance summary
 -------------------
 
@@ -1053,7 +1046,6 @@ Processing your log data
     'count_lines_skipped_downloads': self.count_lines_skipped_downloads.value,
     'count_lines_no_site': self.count_lines_no_site.value,
     'count_lines_hostname_skipped': self.count_lines_hostname_skipped.value,
-    'total_sites': len(self.piwik_sites),
     'total_time': self.time_stop - self.time_start,
     'speed_recording': self._round_value(self._compute_speed(
             self.count_lines_recorded.value,
@@ -1231,8 +1223,6 @@ class StaticResolver(object):
 
     def __init__(self, site_id):
         self.site_id = site_id
-
-        stats.piwik_sites.add(self.site_id)
 
     def resolve(self, hit):
         return (self.site_id)
