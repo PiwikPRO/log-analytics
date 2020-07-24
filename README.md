@@ -1,5 +1,7 @@
 # Piwik Server Log Analytics
 
+This version is meant to be used with Piwik or PPMS-Piwik only (use [trucker](https://github.com/PiwikPRO/piwik-log-analytics/tree/trucker) branch when in need of replaying logs on the Trucker). 
+
 Import your server logs in Piwik with this powerful and easy to use tool.
 
 ## Requirements
