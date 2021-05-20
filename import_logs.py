@@ -1675,16 +1675,13 @@ class Recorder(object):
             if config.options.force_one_action_interval != False:
                 time.sleep(config.options.force_one_action_interval)
 
-            if len(self.unrecorded_hits) > 0:
-                hit = self.unrecorded_hits.pop(0)
-
+            self.unrecorded_hits = self.queue.get()
+            for hit in self.unrecorded_hits:
                 try:
                     self._record_hits([hit])
                 except Piwik.Error, e:
                     fatal_error(e, hit.filename, hit.lineno)
-            else:
-                self.unrecorded_hits = self.queue.get()
-                self.queue.task_done()
+            self.queue.task_done()
 
     def _wait_empty(self):
         """
