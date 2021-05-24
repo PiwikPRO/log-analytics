@@ -1808,7 +1808,9 @@ class Recorder(object):
             data = {
                 'token_auth': config.options.piwik_token_auth,
                 'requests': [dict(
-                (k, unicode(v).encode(config.options.encoding)) for (k, v) in self._get_hit_args(hit).items()) for hit in hits]
+                    (k, v.encode(config.options.encoding) if isinstance(v, unicode) else v)
+                    for (k, v) in self._get_hit_args(hit).items()
+                ) for hit in hits]
             }
             try:
                 args = {}
