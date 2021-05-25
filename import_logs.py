@@ -1114,11 +1114,7 @@ class Piwik(object):
             url = config.options.piwik_url
         headers = headers or {}
 
-        if data is None:
-            # If Content-Type isn't defined, PHP do not parse the request's body.
-            headers['Content-type'] = 'application/x-www-form-urlencoded'
-            data = urllib.urlencode(args)
-        elif not isinstance(data, basestring) and headers['Content-type'] == 'application/json':
+        if data and not isinstance(data, basestring) and headers['Content-type'] == 'application/json':
             data = json.dumps(data)
 
         if args:
@@ -1134,6 +1130,7 @@ class Piwik(object):
         request = urllib2.Request(url + path, data, headers)
         logging.debug("Request url '%s'" % url)
         logging.debug("Request path '%s'" % path)
+        logging.debug("Request method '%s'" % request.get_method())
         logging.debug("Request query args '%s'" % args)
         logging.debug("Request headers '%s'" % headers)
         logging.debug("Request data '%s'" % data)
@@ -1333,16 +1330,13 @@ class Recorder(object):
             if config.options.force_one_action_interval != False:
                 time.sleep(config.options.force_one_action_interval)
 
-            if len(self.unrecorded_hits) > 0:
-                hit = self.unrecorded_hits.pop(0)
-
+            self.unrecorded_hits = self.queue.get()
+            for hit in self.unrecorded_hits:
                 try:
-                    self._record_hits([hit])
+                    self._record_hits([hit], True)
                 except Piwik.Error, e:
                     fatal_error(e, hit.filename, hit.lineno)
-            else:
-                self.unrecorded_hits = self.queue.get()
-                self.queue.task_done()
+            self.queue.task_done()
 
     def _wait_empty(self):
         """
@@ -1433,25 +1427,37 @@ class Recorder(object):
             host = parts.scheme + '://' + host
         return host
 
-    def _record_hits(self, hits):
+    def _record_hits(self, hits, single=False):
         """
         Inserts several hits into Piwik.
         """
         if not config.options.dry_run:
-            data = {
-                'token_auth': config.options.piwik_token_auth,
-                'requests': [self._get_hit_args(hit) for hit in hits]
-            }
-            try:
+            if single:
+                assert len(hits) == 1
+                headers = None
+                data = None
+                args = dict(
+                    (k, v.encode(config.options.encoding) if isinstance(v, unicode) else v)
+                    for (k, v) in self._get_hit_args(hits[0]).items()
+                )
+                if config.options.piwik_token_auth:
+                    args['token_auth'] = config.options.piwik_token_auth
+            else:
+                headers = {'Content-type': 'application/json'}
+                data = {
+                    'token_auth': config.options.piwik_token_auth,
+                    'requests': [self._get_hit_args(hit) for hit in hits]
+                }
                 args = {}
 
+            try:
                 if config.options.debug_tracker:
                     args['debug'] = '1'
 
                 response = piwik.call(
                     '/piwik.php', args=args,
                     expected_content=None,
-                    headers={'Content-type': 'application/json'},
+                    headers=headers,
                     data=data,
                     on_failure=self._on_tracking_failure
                 )
@@ -1459,31 +1465,32 @@ class Recorder(object):
                 if config.options.debug_tracker:
                     logging.debug('tracker response:\n%s' % response)
 
-                # check for invalid requests
-                try:
-                    response = json.loads(response)
-                except:
-                    logging.info("bulk tracking returned invalid JSON")
+                if not single:
+                    # check for invalid requests
+                    try:
+                        response = json.loads(response)
+                    except:
+                        logging.info("bulk tracking returned invalid JSON")
 
-                    # don't display the tracker response if we're debugging the tracker.
-                    # debug tracker output will always break the normal JSON output.
-                    if not config.options.debug_tracker:
-                        logging.info("tracker response:\n%s" % response)
+                        # don't display the tracker response if we're debugging the tracker.
+                        # debug tracker output will always break the normal JSON output.
+                        if not config.options.debug_tracker:
+                            logging.info("tracker response:\n%s" % response)
 
-                    response = {}
+                        response = {}
 
-                if ('invalid_indices' in response and isinstance(response['invalid_indices'], list) and
-                    response['invalid_indices']):
-                    invalid_count = len(response['invalid_indices'])
+                    if ('invalid_indices' in response and isinstance(response['invalid_indices'], list) and
+                        response['invalid_indices']):
+                        invalid_count = len(response['invalid_indices'])
 
-                    invalid_lines = [str(hits[index].lineno) for index in response['invalid_indices']]
-                    invalid_lines_str = ", ".join(invalid_lines)
+                        invalid_lines = [str(hits[index].lineno) for index in response['invalid_indices']]
+                        invalid_lines_str = ", ".join(invalid_lines)
 
-                    stats.invalid_lines.extend(invalid_lines)
+                        stats.invalid_lines.extend(invalid_lines)
 
-                    logging.info("The Piwik tracker identified %s invalid requests on lines: %s" % (invalid_count, invalid_lines_str))
-                elif 'invalid' in response and response['invalid'] > 0:
-                    logging.info("The Piwik tracker identified %s invalid requests." % response['invalid'])
+                        logging.info("The Piwik tracker identified %s invalid requests on lines: %s" % (invalid_count, invalid_lines_str))
+                    elif 'invalid' in response and response['invalid'] > 0:
+                        logging.info("The Piwik tracker identified %s invalid requests." % response['invalid'])
             except Piwik.Error, e:
                 # if the server returned 400 code, BulkTracking may not be enabled
                 if e.code == 400:
