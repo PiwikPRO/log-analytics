@@ -1436,7 +1436,10 @@ class Recorder(object):
                 assert len(hits) == 1
                 headers = None
                 data = None
-                args = dict((k, unicode(v).encode(config.options.encoding)) for (k, v) in self._get_hit_args(hits[0]).items())
+                args = dict(
+                    (k, v.encode(config.options.encoding) if isinstance(v, unicode) else v)
+                    for (k, v) in self._get_hit_args(hits[0]).items()
+                )
                 if config.options.piwik_token_auth:
                     args['token_auth'] = config.options.piwik_token_auth
             else:
