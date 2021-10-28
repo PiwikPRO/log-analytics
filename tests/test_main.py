@@ -208,6 +208,15 @@ class Recorder(object):
     def add_hits(cls, hits):
         cls.recorders.extend(hits)
 
+class Piwik(object):
+    """Mock piwik api requests for StaticResolver tests"""
+    def call_api(cls, method, **kwargs):
+        return {
+                 'idsite': '12345',
+                 'main_url': 'http://example.com',
+                 'site_uuid': '194edb22-394a-48e5-aed8-0797ab29d2ae',
+             }
+
 def test_replay_tracking_seconds_to_add_to_date():
     """Test data parsing from sample log file."""
     file_ = 'logs/logs_to_tests.log'
@@ -1267,3 +1276,19 @@ def test_bz2_parsing():
     assert hits[0]['status'] == '200'
     assert hits[0]['length'] == 444
     assert hits[0]['userid'] == 'theboss'
+
+def test_static_resolver_with_uuid_mapped_to_idsite():
+
+    import_logs.piwik = Piwik()
+    import_logs.stats = import_logs.Statistics()
+    import_logs.resolver = import_logs.StaticResolver("194edb22-394a-48e5-aed8-0797ab29d2ae")
+
+    assert "12345" in import_logs.stats.piwik_sites
+
+def test_static_resolver_with_idsite():
+
+    import_logs.piwik = Piwik()
+    import_logs.stats = import_logs.Statistics()
+    import_logs.resolver = import_logs.StaticResolver("12345")
+
+    assert "12345" in import_logs.stats.piwik_sites

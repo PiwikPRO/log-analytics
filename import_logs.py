@@ -1495,8 +1495,8 @@ class PiwikHttpUrllib(PiwikHttpBase):
         elif not isinstance(data, str) and headers['Content-type'] == 'application/json':
             data = json.dumps(data)
 
-            if args:
-                path = path + '?' + urllib.parse.urlencode(args)
+        if args:
+            path = path + '?' + urllib.parse.urlencode(args)
 
         if config.options.request_suffix:
             path = path + ('&' if '?' in path else '?') + config.options.request_suffix
@@ -1509,6 +1509,12 @@ class PiwikHttpUrllib(PiwikHttpBase):
             timeout = None # the config global object may not be created at this point
 
         request = urllib.request.Request(url + path, data.encode("utf-8"), headers)
+        logging.debug("Request url '%s'" % url)
+        logging.debug("Request path '%s'" % path)
+        logging.debug("Request query args '%s'" % args)
+        logging.debug("Request headers '%s'" % headers)
+        logging.debug("Request data '%s'" % data)
+        logging.debug("Request to '%s'" % request.get_full_url())
 
         # Handle basic auth if auth_user set
         try:
@@ -1581,10 +1587,7 @@ class PiwikHttpUrllib(PiwikHttpBase):
                 final_args.append((key, value))
 
 
-#        logging.debug('%s' % final_args)
-#        logging.debug('%s' % url)
-
-        res = self._call('/', final_args, url=url)
+        res = self._call('/index.php', final_args, url=url)
 
         try:
             return json.loads(res)
@@ -1603,7 +1606,7 @@ class PiwikHttpUrllib(PiwikHttpBase):
                     if on_failure is not None:
                         error_message = on_failure(response, kwargs.get('data'))
                     else:
-                        error_message = "didn't receive the expected response. Response was %s " % response
+                        error_message = "didn't receive the expected response '%s'. Response was '%s' " % expected_response, response
 
                     raise urllib.error.URLError(error_message)
                 return response
@@ -1662,17 +1665,28 @@ class StaticResolver:
     def __init__(self, site_id):
         self.site_id = site_id
         # Go get the main URL
-        site = piwik.call_api(
-            'SitesManager.getSiteFromId', idSite=self.site_id
-        )
+        try:
+            # if casting to int throws error we assume that given idsite is an siteUuid
+            int(self.site_id)
+            site = piwik.call_api(
+                'SitesManager.getSiteFromId', idSite=self.site_id
+            )
+        except ValueError:
+            site = piwik.call_api(
+                'SitesManager.getSiteFromUuid', siteUuid=self.site_id
+            )
+
         # Added for older Piwik server support
         if isinstance(site, list):
             site = site[0]
+
         if site.get('result') == 'error':
             fatal_error(
                 "cannot get the main URL of this site: %s" % site.get('message')
             )
         self._main_url = site['main_url']
+        self.site_id = site['idsite']
+
         stats.piwik_sites.add(self.site_id)
 
     def resolve(self, hit):
@@ -1693,6 +1707,9 @@ class DynamicResolver:
         if config.options.replay_tracking:
             # get existing sites
             self._cache['sites'] = piwik.call_api('SitesManager.getAllSites')
+            for f in self._cache['sites'].keys():
+                # duplicate the rows but using site_uuid as key so cache is searchable by site_uuid
+                self._cache['sites'][self._cache['sites'][f]['site_uuid']] = self._cache['sites'][f]
 
     def _get_site_id_from_hit_host(self, hit):
         return piwik.call_api(
@@ -1785,7 +1802,7 @@ class DynamicResolver:
         If replay_tracking option is enabled, call _resolve_when_replay_tracking.
         """
         if config.options.replay_tracking:
-            # We only consider requests with piwik.php which don't need host to be imported
+            # We only consider requests with piwik.php, ppms.php, js/ or js/tracker.php which don't need host to be imported
             return self._resolve_when_replay_tracking(hit)
         else:
             # Workaround for empty Host bug issue #126
@@ -1875,16 +1892,13 @@ class Recorder:
             if config.options.force_one_action_interval != False:
                 time.sleep(config.options.force_one_action_interval)
 
-            if len(self.unrecorded_hits) > 0:
-                hit = self.unrecorded_hits.pop(0)
-
+            self.unrecorded_hits = self.queue.get()
+            for hit in self.unrecorded_hits:
                 try:
                     self._record_hits([hit])
                 except PiwikHttpBase.Error as e:
                     fatal_error(e, hit.filename, hit.lineno)
-            else:
-                self.unrecorded_hits = self.queue.get()
-                self.queue.task_done()
+            self.queue.task_done()
 
     def _wait_empty(self):
         """
@@ -2584,7 +2598,7 @@ class Parser:
                 continue
 
             if config.options.replay_tracking:
-                # we need a query string and we only consider requests with piwik.php
+                # we need a query string and we only consider requests with piwik.php, ppms.php, js/ or js/tracker.php
                 if not hit.query_string or not self.is_hit_for_tracker(hit):
                     invalid_line(line, 'no query string, or ' + hit.path.lower() + ' does not end with piwik.php, ppms.php, js/ or js/tracker.php')
                     continue

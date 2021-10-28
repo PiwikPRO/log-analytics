@@ -8,8 +8,6 @@ python:
 
 sudo: false
 
-dist: bionic
-
 script:
   - cd tests
   - ./run_tests.sh
