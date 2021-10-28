@@ -1991,7 +1991,7 @@ class Recorder:
             )
 
         if hit.generation_time_milli > 0:
-            args['pf_srv'] = int(hit.generation_time_milli)
+            args['gt_ms'] = int(hit.generation_time_milli)
 
         if hit.event_category and hit.event_action:
             args['e_c'] = hit.event_category
