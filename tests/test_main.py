@@ -1227,9 +1227,9 @@ def test_timedelta_from_timezone():
     _test('-0230', -9000)
     _test('-0000', 0)
 
-# Matomo error test
-def test_matomo_error_construct():
-    """Test that Matomo exception can be created."""
+# Piwik error test
+def test_piwik_error_construct():
+    """Test that Piwik exception can be created."""
 
     try:
         raise import_logs.PiwikHttpBase.Error('test message', 120)
