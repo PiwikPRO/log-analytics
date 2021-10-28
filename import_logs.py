@@ -2,13 +2,13 @@
 # vim: et sw=4 ts=4:
 # -*- coding: utf-8 -*-
 #
-# Matomo - free/libre analytics platform
+# Piwik - free/libre analytics platform
 #
-# @link https://matomo.org
+# @link https://piwik.org
 # @license https://www.gnu.org/licenses/gpl-3.0.html GPL v3 or later
 # @version $Id$
 #
-# For more info see: https://matomo.org/log-analytics/ and https://matomo.org/docs/log-analytics-tool-how-to/
+# For more info see: https://piwik.org/log-analytics/ and https://piwik.org/docs/log-analytics-tool-how-to/
 #
 # Requires Python 3.5, 3.6 or 3.7
 #
@@ -78,8 +78,7 @@ DOWNLOAD_EXTENSIONS = set((
     'md5 sig'
 ).split())
 
-# If you want to add more bots, take a look at the Matomo Device Detector botlist:
-# https://github.com/matomo-org/device-detector/blob/master/regexes/bots.yml
+# A good source is: http://phpbb-bots.blogspot.com/
 # user agents must be lowercase
 EXCLUDED_USER_AGENTS = (
     'adsbot-google',
@@ -113,11 +112,11 @@ EXCLUDED_USER_AGENTS = (
     'googlestackdrivermonitoring',
 )
 
-MATOMO_DEFAULT_MAX_ATTEMPTS = 3
-MATOMO_DEFAULT_DELAY_AFTER_FAILURE = 10
+PIWIK_DEFAULT_MAX_ATTEMPTS = 3
+PIWIK_DEFAULT_DELAY_AFTER_FAILURE = 10
 DEFAULT_SOCKET_TIMEOUT = 300
 
-MATOMO_EXPECTED_IMAGE = base64.b64decode(
+PIWIK_EXPECTED_IMAGE = base64.b64decode(
     'R0lGODlhAQABAIAAAAAAAAAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=='
 )
 
@@ -540,13 +539,13 @@ class Configuration:
         """
         parser = argparse.ArgumentParser(
             # usage='Usage: %prog [options] log_file [ log_file [...] ]',
-            description="Import HTTP access logs to Matomo. "
+            description="Import HTTP access logs to Piwik. "
                          "log_file is the path to a server access log file (uncompressed, .gz, .bz2, or specify - to read from stdin). "
                          " You may also import many log files at once (for example set log_file to *.log or *.log.gz)."
                          " By default, the script will try to produce clean reports and will exclude bots, static files, discard http error and redirects, etc. This is customizable, see below.",
-            epilog="About Matomo Server Log Analytics: https://matomo.org/log-analytics/ "
-                   "              Found a bug? Please create a ticket in https://github.com/matomo-org/matomo-log-analytics/ "
-                   "              Please send your suggestions or successful user story to hello@matomo.org "
+            epilog="About Piwik Server Log Analytics: http://piwik.org/log-analytics/ "
+                   "              Found a bug? Please create a ticket in http://dev.piwik.org/ "
+                   "              Please send your suggestions or successful user story to hello@piwik.org "
         )
 
         parser.add_argument('file', type=str, nargs='+')
@@ -570,7 +569,7 @@ class Configuration:
             help="Appends &debug=1 to tracker requests and prints out the result so the tracker can be debugged. If "
             "using the log importer results in errors with the tracker or improperly recorded visits, this option can "
             "be used to find out what the tracker is doing wrong. To see debug tracker output, you must also set the "
-            "[Tracker] debug_on_demand INI config to 1 in your Matomo's config.ini.php file."
+            "[Tracker] debug_on_demand INI config to 1 in your Piwik's config.ini.php file."
         )
         parser.add_argument(
             '--debug-request-limit', dest='debug_request_limit', type=int, default=None,
@@ -578,22 +577,22 @@ class Configuration:
             "output of a large log file."
         )
         parser.add_argument(
-            '--url', dest='matomo_url', required=True,
-            help="REQUIRED Your Matomo server URL, eg. https://example.com/matomo/ or https://analytics.example.net",
+            '--url', dest='piwik_url', required=True,
+            help="REQUIRED Your Piwik server URL, eg. https://example.com/piwik/ or https://analytics.example.net",
         )
         parser.add_argument(
-            '--api-url', dest='matomo_api_url',
+            '--api-url', dest='piwik_api_url',
             help="This URL will be used to send API requests (use it if your tracker URL differs from UI/API url), "
-            "eg. https://other-example.com/matomo/ or https://analytics-api.example.net",
+            "eg. https://other-example.com/piwik/ or https://analytics-api.example.net",
         )
         parser.add_argument(
-            '--tracker-endpoint-path', dest='matomo_tracker_endpoint_path', default='/piwik.php',
+            '--tracker-endpoint-path', dest='piwik_tracker_endpoint_path', default='/piwik.php',
             help="The tracker endpoint path to use when tracking. Defaults to /piwik.php."
         )
         parser.add_argument(
             '--dry-run', dest='dry_run',
             action='store_true', default=False,
-            help="Perform a trial run with no tracking data being inserted into Matomo",
+            help="Perform a trial run with no tracking data being inserted into Piwik",
         )
         parser.add_argument(
             '--show-progress', dest='show_progress',
@@ -609,18 +608,18 @@ class Configuration:
             '--add-sites-new-hosts', dest='add_sites_new_hosts',
             action='store_true', default=False,
             help="When a hostname is found in the log file, but not matched to any website "
-            "in Matomo, automatically create a new website in Matomo with this hostname to "
+            "in Piwik, automatically create a new website in Piwik with this hostname to "
             "import the logs"
         )
         parser.add_argument(
             '--idsite', dest='site_id',
             help= ("When specified, "
-                   "data in the specified log files will be tracked for this Matomo site ID."
+                   "data in the specified log files will be tracked for this Piwik site ID."
                    " The script will not auto-detect the website based on the log line hostname (new websites will not be automatically created).")
         )
         parser.add_argument(
             '--idsite-fallback', dest='site_id_fallback',
-            help="Default Matomo site ID to use if the hostname doesn't match any "
+            help="Default Piwik site ID to use if the hostname doesn't match any "
             "known Website's URL. New websites will not be automatically created. "
             "                         Used only if --add-sites-new-hosts or --idsite are not set",
         )
@@ -632,21 +631,21 @@ class Configuration:
             '--config', dest='config_file', default=default_config,
             help=(
                 "This is only used when --login and --password is not used. "
-                "Matomo will read the configuration file (default: %(default)s) to "
+                "Piwik will read the configuration file (default: %(default)s) to "
                 "fetch the Super User token_auth from the config file. "
             )
         )
         parser.add_argument(
             '--login', dest='login',
-            help="You can manually specify the Matomo Super User login"
+            help="You can manually specify the Piwik Super User login"
         )
         parser.add_argument(
             '--password', dest='password',
-            help="You can manually specify the Matomo Super User password"
+            help="You can manually specify the Piwik Super User password"
         )
         parser.add_argument(
-            '--token-auth', dest='matomo_token_auth',
-            help="Matomo user token_auth, the token_auth is found in Matomo > Settings > API. "
+            '--token-auth', dest='piwik_token_auth',
+            help="Piwik user token_auth, the token_auth is found in Piwik > Settings > API. "
                  "You must use a token_auth that has at least 'admin' or 'super user' permission. "
                  "If you use a token_auth for a non admin user, your users' IP addresses will not be tracked properly. "
         )
@@ -660,7 +659,7 @@ class Configuration:
         )
         parser.add_argument(
             '--exclude-path', dest='excluded_paths', action='append', default=[],
-            help="Any URL path matching this exclude-path will not be imported in Matomo. "
+            help="Any URL path matching this exclude-path will not be imported in Piwik. "
             " You must use the star character *. "
             " Example: --exclude-path=*/admin/*"
             " Can be specified multiple times. "
@@ -706,7 +705,7 @@ class Configuration:
         parser.add_argument(
             '--enable-reverse-dns', dest='reverse_dns',
             action='store_true', default=False,
-            help="Enable reverse DNS, used to generate the 'Providers' report in Matomo. "
+            help="Enable reverse DNS, used to generate the 'Providers' report in Piwik. "
                  "Disabled by default, as it impacts performance"
         )
         parser.add_argument(
@@ -760,12 +759,14 @@ class Configuration:
         parser.add_argument(
             '--replay-tracking', dest='replay_tracking',
             action='store_true', default=False,
-            help="Replay piwik.php requests found in custom logs (only piwik.php requests expected). \nSee https://matomo.org/faq/how-to/faq_17033/"
+            help="Replay requests to the Tracker found in custom logs (only piwik.php, ppms.php, js/ or js/tracker.php"
+                 " requests expected, but it can be configured with --replay-tracking-expected-tracker-file option)."
         )
         parser.add_argument(
             '--replay-tracking-expected-tracker-file', dest='replay_tracking_expected_tracker_file', default=None,
-            help="The expected suffix for tracking request paths. Only logs whose paths end with this will be imported. By default "
-            "requests to the piwik.php file or the matomo.php file will be imported."
+            help="The expected suffix for tracking request paths. Only logs whose paths end with this will be imported."
+                 " Defaults to 'piwik.php', 'ppms.php', 'js/' or 'js/tracker.php' so only requests to those files will"
+                 " be imported."
         )
         parser.add_argument(
             '--output', dest='output',
@@ -791,11 +792,11 @@ class Configuration:
         )
         parser.add_argument(
             '--enable-testmode', dest='enable_testmode', default=False, action='store_true',
-            help="If set, it will try to get the token_auth from the matomo_tests directory"
+            help="If set, it will try to get the token_auth from the piwik_tests directory"
         )
         parser.add_argument(
             '--download-extensions', dest='download_extensions', default=None,
-            help="By default Matomo tracks as Downloads the most popular file extensions. If you set this parameter (format: pdf,doc,...) then files with an extension found in the list will be imported as Downloads, other file extensions downloads will be skipped."
+            help="By default Piwik tracks as Downloads the most popular file extensions. If you set this parameter (format: pdf,doc,...) then files with an extension found in the list will be imported as Downloads, other file extensions downloads will be skipped."
         )
         parser.add_argument(
             '--add-download-extensions', dest='extra_download_extensions', default=None,
@@ -833,7 +834,7 @@ class Configuration:
         parser.add_argument(
             '--title-category-delimiter', dest='title_category_delimiter', default='/',
             help="If --enable-http-errors is used, errors are shown in the page titles report. If you have "
-            "changed General.action_title_category_delimiter in your Matomo configuration, you need to set this "
+            "changed General.action_title_category_delimiter in your Piwik configuration, you need to set this "
             "option to the same value in order to get a pretty page titles report."
         )
         parser.add_argument(
@@ -852,7 +853,7 @@ class Configuration:
 
         parser.add_argument(
             '--regex-group-to-visit-cvar', action=StoreDictKeyPair, metavar='KEY=VAL',dest='regex_group_to_visit_cvars_map', default={},
-            help="Track an attribute through a custom variable with visit scope instead of through Matomo's normal "
+            help="Track an attribute through a custom variable with visit scope instead of through Piwik's normal "
                  "approach. For example, to track usernames as a custom variable instead of through the uid tracking "
                  "parameter, supply --regex-group-to-visit-cvar=\"userid=User Name\". This will track usernames in a "
                  "custom variable named 'User Name'. The list of available regex groups can be found in the documentation "
@@ -861,7 +862,7 @@ class Configuration:
         )
         parser.add_argument(
             '--regex-group-to-page-cvar', action=StoreDictKeyPair, metavar='KEY=VAL', dest='regex_group_to_page_cvars_map', default={},
-            help="Track an attribute through a custom variable with page scope instead of through Matomo's normal "
+            help="Track an attribute through a custom variable with page scope instead of through Piwik's normal "
                  "approach. For example, to track usernames as a custom variable instead of through the uid tracking "
                  "parameter, supply --regex-group-to-page-cvar=\"userid=User Name\". This will track usernames in a "
                  "custom variable named 'User Name'. The list of available regex groups can be found in the documentation "
@@ -873,16 +874,16 @@ class Configuration:
             help="Enables tracking of http method as custom page variable if method group is available in log format."
         )
         parser.add_argument(
-            '--retry-max-attempts', dest='max_attempts', default=MATOMO_DEFAULT_MAX_ATTEMPTS, type=int,
+            '--retry-max-attempts', dest='max_attempts', default=PIWIK_DEFAULT_MAX_ATTEMPTS, type=int,
             help="The maximum number of times to retry a failed tracking request."
         )
         parser.add_argument(
-            '--retry-delay', dest='delay_after_failure', default=MATOMO_DEFAULT_DELAY_AFTER_FAILURE, type=int,
+            '--retry-delay', dest='delay_after_failure', default=PIWIK_DEFAULT_DELAY_AFTER_FAILURE, type=int,
             help="The number of seconds to wait before retrying a failed tracking request."
         )
         parser.add_argument(
             '--request-timeout', dest='request_timeout', default=DEFAULT_SOCKET_TIMEOUT, type=int,
-            help="The maximum number of seconds to wait before terminating an HTTP request to Matomo."
+            help="The maximum number of seconds to wait before terminating an HTTP request to Piwik."
         )
         parser.add_argument(
             '--include-host', action='append', type=str,
@@ -911,7 +912,7 @@ class Configuration:
             '--accept-invalid-ssl-certificate',
             dest='accept_invalid_ssl_certificate', action='store_true',
             default=False,
-            help="Do not verify the SSL / TLS certificate when contacting the Matomo server."
+            help="Do not verify the SSL / TLS certificate when contacting the Piwik server."
         )
         parser.add_argument(
             '--php-binary', dest='php_binary', type=str, default='php',
@@ -1008,16 +1009,16 @@ class Configuration:
                     return
 
 
-        if not (self.options.matomo_url.startswith('http://') or self.options.matomo_url.startswith('https://')):
-            self.options.matomo_url = 'http://' + self.options.matomo_url
-        logging.debug('Matomo Tracker API URL is: %s', self.options.matomo_url)
+        if not (self.options.piwik_url.startswith('http://') or self.options.piwik_url.startswith('https://')):
+            self.options.piwik_url = 'http://' + self.options.piwik_url
+        logging.debug('Piwik Tracker API URL is: %s', self.options.piwik_url)
 
-        if not self.options.matomo_api_url:
-            self.options.matomo_api_url = self.options.matomo_url
+        if not self.options.piwik_api_url:
+            self.options.piwik_api_url = self.options.piwik_url
 
-        if not (self.options.matomo_api_url.startswith('http://') or self.options.matomo_api_url.startswith('https://')):
-            self.options.matomo_api_url = 'http://' + self.options.matomo_api_url
-        logging.debug('Matomo Analytics API URL is: %s', self.options.matomo_api_url)
+        if not (self.options.piwik_api_url.startswith('http://') or self.options.piwik_api_url.startswith('https://')):
+            self.options.piwik_api_url = 'http://' + self.options.piwik_api_url
+        logging.debug('Piwik Analytics API URL is: %s', self.options.piwik_api_url)
 
         if self.options.recorders < 1:
             self.options.recorders = 1
@@ -1038,24 +1039,24 @@ class Configuration:
 
     def _get_token_auth(self):
         """
-        If the token auth is not specified in the options, get it from Matomo.
+        If the token auth is not specified in the options, get it from Piwik.
         """
         # Get superuser login/password from the options.
         logging.debug('No token-auth specified')
 
         if self.options.login and self.options.password:
-            matomo_login = self.options.login
-            matomo_password = self.options.password
+            piwik_login = self.options.login
+            piwik_password = self.options.password
 
-            logging.debug('Using credentials: (login = %s, using password = %s)', matomo_login, 'YES' if matomo_password else 'NO')
+            logging.debug('Using credentials: (login = %s, using password = %s)', piwik_login, 'YES' if piwik_password else 'NO')
             try:
-                api_result = matomo.call_api('UsersManager.createAppSpecificTokenAuth',
-                    userLogin=matomo_login,
-                    passwordConfirmation=matomo_password,
+                api_result = piwik.call_api('UsersManager.createAppSpecificTokenAuth',
+                    userLogin=piwik_login,
+                    passwordConfirmation=piwik_password,
                     description='Log importer',
                     expireHours='48',
                     _token_auth='',
-                    _url=self.options.matomo_api_url,
+                    _url=self.options.piwik_api_url,
                 )
             except urllib.error.URLError as e:
                 fatal_error('error when fetching token_auth from the API: %s' % e)
@@ -1107,8 +1108,8 @@ class Configuration:
             if self.options.enable_testmode:
                 command.append('--testmode')
 
-            hostname = urllib.parse.urlparse( self.options.matomo_url ).hostname
-            command.append('--matomo-domain=' + hostname )
+            hostname = urllib.parse.urlparse( self.options.piwik_url ).hostname
+            command.append('--piwik-domain=' + hostname )
 
             command = subprocess.list2cmdline(command)
 
@@ -1134,12 +1135,12 @@ class Configuration:
             return DynamicResolver()
 
     def init_token_auth(self):
-        if not self.options.matomo_token_auth:
+        if not self.options.piwik_token_auth:
             try:
-                self.options.matomo_token_auth = self._get_token_auth()
-            except MatomoHttpBase.Error as e:
+                self.options.piwik_token_auth = self._get_token_auth()
+            except PiwikHttpBase.Error as e:
                 fatal_error(e)
-        logging.debug('Authentication token token_auth is: %s', self.options.matomo_token_auth)
+        logging.debug('Authentication token token_auth is: %s', self.options.piwik_token_auth)
 
 
 class Statistics:
@@ -1173,14 +1174,14 @@ class Statistics:
         self.time_start = None
         self.time_stop = None
 
-        self.matomo_sites = set()                # sites ID
-        self.matomo_sites_created = []           # (hostname, site ID)
-        self.matomo_sites_ignored = set()        # hostname
+        self.piwik_sites = set()                # sites ID
+        self.piwik_sites_created = []           # (hostname, site ID)
+        self.piwik_sites_ignored = set()        # hostname
 
         self.count_lines_parsed = self.Counter()
         self.count_lines_recorded = self.Counter()
 
-        # requests that the Matomo tracker considered invalid (or failed to track)
+        # requests that the Piwik tracker considered invalid (or failed to track)
         self.invalid_lines = []
 
         # Do not match the regexp.
@@ -1246,7 +1247,7 @@ class Statistics:
             invalid_lines_summary = '''Invalid log lines
 -----------------
 
-The following lines were not tracked by Matomo, either due to a malformed tracker request or error in the tracker:
+The following lines were not tracked by Piwik, either due to a malformed tracker request or error in the tracker:
 
 %s
 
@@ -1289,7 +1290,7 @@ Performance summary
 Processing your log data
 ------------------------
 
-    In order for your logs to be processed by Matomo, you may need to run the following command:
+    In order for your logs to be processed by Piwik, you may need to run the following command:
      ./console core:archive --force-all-websites --url='%(url)s'
 ''' % {
 
@@ -1315,36 +1316,36 @@ Processing your log data
     'count_lines_skipped_downloads': self.count_lines_skipped_downloads.value,
     'count_lines_no_site': self.count_lines_no_site.value,
     'count_lines_hostname_skipped': self.count_lines_hostname_skipped.value,
-    'total_sites': len(self.matomo_sites),
-    'total_sites_existing': len(self.matomo_sites - set(site_id for hostname, site_id in self.matomo_sites_created)),
-    'total_sites_created': len(self.matomo_sites_created),
+    'total_sites': len(self.piwik_sites),
+    'total_sites_existing': len(self.piwik_sites - set(site_id for hostname, site_id in self.piwik_sites_created)),
+    'total_sites_created': len(self.piwik_sites_created),
     'sites_created': self._indent_text(
-            ['%s (ID: %d)' % (hostname, site_id) for hostname, site_id in self.matomo_sites_created],
+            ['%s (ID: %d)' % (hostname, site_id) for hostname, site_id in self.piwik_sites_created],
             level=3,
         ),
-    'total_sites_ignored': len(self.matomo_sites_ignored),
+    'total_sites_ignored': len(self.piwik_sites_ignored),
     'sites_ignored': self._indent_text(
-            self.matomo_sites_ignored, level=3,
+            self.piwik_sites_ignored, level=3,
         ),
     'sites_ignored_tips': '''
         TIPs:
          - if one of these hosts is an alias host for one of the websites
-           in Matomo, you can add this host as an "Alias URL" in Settings > Websites.
+           in Piwik, you can add this host as an "Alias URL" in Settings > Websites.
          - use --add-sites-new-hosts if you wish to automatically create
-           one website for each of these hosts in Matomo rather than discarding
+           one website for each of these hosts in Piwik rather than discarding
            these requests.
          - use --idsite-fallback to force all these log lines with a new hostname
            to be recorded in a specific idsite (for example for troubleshooting/visualizing the data)
          - use --idsite to force all lines in the specified log files
            to be all recorded in the specified idsite
-         - or you can also manually create a new Website in Matomo with the URL set to this hostname
-''' if self.matomo_sites_ignored else '',
+         - or you can also manually create a new Website in Piwik with the URL set to this hostname
+''' if self.piwik_sites_ignored else '',
     'total_time': self.time_stop - self.time_start,
     'speed_recording': self._round_value(self._compute_speed(
             self.count_lines_recorded.value,
             self.time_start, self.time_stop,
         )),
-    'url': config.options.matomo_api_url,
+    'url': config.options.piwik_api_url,
     'invalid_lines': invalid_lines_summary
 }))
 
@@ -1453,18 +1454,18 @@ class UrlHelper:
             result.append(d[str(i)])
         return result
 
-class MatomoHttpBase:
+class PiwikHttpBase:
     class Error(Exception):
 
         def __init__(self, message, code = None):
-            super(MatomoHttpBase.Error, self).__init__(message)
+            super(PiwikHttpBase.Error, self).__init__(message)
 
             self.code = code
 
 
-class MatomoHttpUrllib(MatomoHttpBase):
+class PiwikHttpUrllib(PiwikHttpBase):
     """
-    Make requests to Matomo.
+    Make requests to Piwik.
     """
 
     class RedirectHandlerWithLogging(urllib.request.HTTPRedirectHandler):
@@ -1480,11 +1481,11 @@ class MatomoHttpUrllib(MatomoHttpBase):
 
     def _call(self, path, args, headers=None, url=None, data=None):
         """
-        Make a request to the Matomo site. It is up to the caller to format
+        Make a request to the Piwik site. It is up to the caller to format
         arguments, to embed authentication, etc.
         """
         if url is None:
-            url = config.options.matomo_url
+            url = config.options.piwik_url
         headers = headers or {}
 
         if data is None:
@@ -1500,7 +1501,7 @@ class MatomoHttpUrllib(MatomoHttpBase):
         if config.options.request_suffix:
             path = path + ('&' if '?' in path else '?') + config.options.request_suffix
 
-        headers['User-Agent'] = 'Matomo/LogImport'
+        headers['User-Agent'] = 'Piwik/LogImport'
 
         try:
             timeout = config.options.request_timeout
@@ -1543,7 +1544,7 @@ class MatomoHttpUrllib(MatomoHttpBase):
 
     def _call_api(self, method, **kwargs):
         """
-        Make a request to the Matomo API taking care of authentication, body
+        Make a request to the Piwik API taking care of authentication, body
         formatting, etc.
         """
         args = {
@@ -1555,22 +1556,22 @@ class MatomoHttpUrllib(MatomoHttpBase):
         # token_auth, by default, is taken from config.
         token_auth = kwargs.pop('_token_auth', None)
         if token_auth is None:
-            token_auth = config.options.matomo_token_auth
+            token_auth = config.options.piwik_token_auth
         if token_auth:
             args['token_auth'] = token_auth
 
         url = kwargs.pop('_url', None)
         if url is None:
-            url = config.options.matomo_api_url
+            url = config.options.piwik_api_url
 
 
         if kwargs:
             args.update(kwargs)
 
         # Convert lists into appropriate format.
-        # See: https://developer.matomo.org/api-reference/reporting-api#passing-an-array-of-data-as-a-parameter
+        # See: http://developer.piwik.org/api-reference/reporting-api#passing-an-array-of-data-as-a-parameter
         # Warning: we have to pass the parameters in order: foo[0], foo[1], foo[2]
-        # and not foo[1], foo[0], foo[2] (it will break Matomo otherwise.)
+        # and not foo[1], foo[0], foo[2] (it will break Piwik otherwise.)
         final_args = []
         for key, value in args.items():
             if isinstance(value, (list, tuple)):
@@ -1588,11 +1589,11 @@ class MatomoHttpUrllib(MatomoHttpBase):
         try:
             return json.loads(res)
         except ValueError:
-            raise urllib.error.URLError('Matomo returned an invalid response: ' + res.decode("utf-8") )
+            raise urllib.error.URLError('Piwik returned an invalid response: ' + res.decode("utf-8") )
 
     def _call_wrapper(self, func, expected_response, on_failure, *args, **kwargs):
         """
-        Try to make requests to Matomo at most MATOMO_FAILURE_MAX_RETRY times.
+        Try to make requests to Piwik at most PIWIK_FAILURE_MAX_RETRY times.
         """
         errors = 0
         while True:
@@ -1607,7 +1608,7 @@ class MatomoHttpUrllib(MatomoHttpBase):
                     raise urllib.error.URLError(error_message)
                 return response
             except (urllib.error.URLError, http.client.HTTPException, ValueError, socket.timeout) as e:
-                logging.info('Error when connecting to Matomo: %s', e)
+                logging.info('Error when connecting to Piwik: %s', e)
 
                 code = None
                 if isinstance(e, urllib.error.HTTPError):
@@ -1627,14 +1628,14 @@ class MatomoHttpUrllib(MatomoHttpBase):
                     delay_after_failure = config.options.delay_after_failure
                     max_attempts = config.options.max_attempts
                 except NameError:
-                    delay_after_failure = MATOMO_DEFAULT_DELAY_AFTER_FAILURE
-                    max_attempts = MATOMO_DEFAULT_MAX_ATTEMPTS
+                    delay_after_failure = PIWIK_DEFAULT_DELAY_AFTER_FAILURE
+                    max_attempts = PIWIK_DEFAULT_MAX_ATTEMPTS
 
                 errors += 1
                 if errors == max_attempts:
                     logging.info("Max number of attempts reached, server is unreachable!")
 
-                    raise MatomoHttpBase.Error(message, code)
+                    raise PiwikHttpBase.Error(message, code)
                 else:
                     logging.info("Retrying request, attempt number %d" % (errors + 1))
 
@@ -1650,7 +1651,7 @@ class MatomoHttpUrllib(MatomoHttpBase):
 ##
 ## Resolvers.
 ##
-## A resolver is a class that turns a hostname into a Matomo site ID.
+## A resolver is a class that turns a hostname into a Piwik site ID.
 ##
 
 class StaticResolver:
@@ -1661,7 +1662,7 @@ class StaticResolver:
     def __init__(self, site_id):
         self.site_id = site_id
         # Go get the main URL
-        site = matomo.call_api(
+        site = piwik.call_api(
             'SitesManager.getSiteFromId', idSite=self.site_id
         )
         # Added for older Piwik server support
@@ -1672,7 +1673,7 @@ class StaticResolver:
                 "cannot get the main URL of this site: %s" % site.get('message')
             )
         self._main_url = site['main_url']
-        stats.matomo_sites.add(self.site_id)
+        stats.piwik_sites.add(self.site_id)
 
     def resolve(self, hit):
         return (self.site_id, self._main_url)
@@ -1682,7 +1683,7 @@ class StaticResolver:
 
 class DynamicResolver:
     """
-    Use Matomo API to determine the site ID.
+    Use Piwik API to determine the site ID.
     """
 
     _add_site_lock = threading.Lock()
@@ -1691,10 +1692,10 @@ class DynamicResolver:
         self._cache = {}
         if config.options.replay_tracking:
             # get existing sites
-            self._cache['sites'] = matomo.call_api('SitesManager.getAllSites')
+            self._cache['sites'] = piwik.call_api('SitesManager.getAllSites')
 
     def _get_site_id_from_hit_host(self, hit):
-        return matomo.call_api(
+        return piwik.call_api(
             'SitesManager.getSitesIdFromSiteUrl',
             url=hit.host,
         )
@@ -1710,7 +1711,7 @@ class DynamicResolver:
                 return res[0]['idsite']
 
             # The site doesn't exist.
-            logging.debug('No Matomo site found for the hostname: %s', hit.host)
+            logging.debug('No Piwik site found for the hostname: %s', hit.host)
             if config.options.site_id_fallback is not None:
                 logging.debug('Using default site for hostname: %s', hit.host)
                 return config.options.site_id_fallback
@@ -1718,20 +1719,20 @@ class DynamicResolver:
                 if config.options.dry_run:
                     # Let's just return a fake ID.
                     return 0
-                logging.debug('Creating a Matomo site for hostname %s', hit.host)
-                result = matomo.call_api(
+                logging.debug('Creating a Piwik site for hostname %s', hit.host)
+                result = piwik.call_api(
                     'SitesManager.addSite',
                     siteName=hit.host,
                     urls=[main_url],
                 )
                 if result.get('result') == 'error':
-                    logging.error("Couldn't create a Matomo site for host %s: %s",
+                    logging.error("Couldn't create a Piwik site for host %s: %s",
                         hit.host, result.get('message'),
                     )
                     return None
                 else:
                     site_id = result['value']
-                    stats.matomo_sites_created.append((hit.host, site_id))
+                    stats.piwik_sites_created.append((hit.host, site_id))
                     return site_id
             else:
                 # The site doesn't exist, we don't want to create new sites and
@@ -1748,7 +1749,7 @@ class DynamicResolver:
         else:
             site_id = self._add_site(hit)
         if site_id is not None:
-            stats.matomo_sites.add(site_id)
+            stats.piwik_sites.add(site_id)
         return site_id
 
     def _resolve_when_replay_tracking(self, hit):
@@ -1758,7 +1759,7 @@ class DynamicResolver:
         """
         site_id = hit.args['idsite']
         if site_id in self._cache['sites']:
-            stats.matomo_sites.add(site_id)
+            stats.piwik_sites.add(site_id)
             return (site_id, self._cache['sites'][site_id]['main_url'])
         else:
             return (None, None)
@@ -1798,12 +1799,12 @@ class DynamicResolver:
         elif format.regex is not None and 'host' not in format.regex.groupindex and not config.options.log_hostname:
             fatal_error(
                 "the selected log format doesn't include the hostname: you must "
-                "specify the Matomo site ID with the --idsite argument"
+                "specify the Piwik site ID with the --idsite argument"
             )
 
 class Recorder:
     """
-    A Recorder fetches hits from the Queue and inserts them into Matomo using
+    A Recorder fetches hits from the Queue and inserts them into Piwik using
     the API.
     """
 
@@ -1865,7 +1866,7 @@ class Recorder:
             if len(hits) > 0:
                 try:
                     self._record_hits(hits)
-                except MatomoHttpBase.Error as e:
+                except PiwikHttpBase.Error as e:
                     fatal_error(e, hits[0].filename, hits[0].lineno) # approximate location of error
             self.queue.task_done()
 
@@ -1879,7 +1880,7 @@ class Recorder:
 
                 try:
                     self._record_hits([hit])
-                except MatomoHttpBase.Error as e:
+                except PiwikHttpBase.Error as e:
                     fatal_error(e, hit.filename, hit.lineno)
             else:
                 self.unrecorded_hits = self.queue.get()
@@ -1898,7 +1899,7 @@ class Recorder:
                 return
             time.sleep(1)
 
-    def date_to_matomo(self, date):
+    def date_to_piwik(self, date):
         date, time = date.isoformat(sep=' ').split()
         return '%s %s' % (date, time.replace('-', ':'))
 
@@ -1908,11 +1909,11 @@ class Recorder:
         """
         site_id, main_url = resolver.resolve(hit)
         if site_id is None:
-            # This hit doesn't match any known Matomo site.
+            # This hit doesn't match any known Piwik site.
             if config.options.replay_tracking:
-                stats.matomo_sites_ignored.add('unrecognized site ID %s' % hit.args.get('idsite'))
+                stats.piwik_sites_ignored.add('unrecognized site ID %s' % hit.args.get('idsite'))
             else:
-                stats.matomo_sites_ignored.add(hit.host)
+                stats.piwik_sites_ignored.add(hit.host)
             stats.count_lines_no_site.increment()
             return
 
@@ -1941,7 +1942,7 @@ class Recorder:
             'url': url,
             'urlref': hit.referrer[:1024],
             'cip': hit.ip,
-            'cdt': self.date_to_matomo(hit.date),
+            'cdt': self.date_to_piwik(hit.date),
             'idsite': site_id,
             'queuedtracking': '0',
             'dp': '0' if config.options.reverse_dns else '1',
@@ -2005,11 +2006,11 @@ class Recorder:
 
     def _record_hits(self, hits):
         """
-        Inserts several hits into Matomo.
+        Inserts several hits into Piwik.
         """
         if not config.options.dry_run:
             data = {
-                'token_auth': config.options.matomo_token_auth,
+                'token_auth': config.options.piwik_token_auth,
                 'requests': [self._get_hit_args(hit) for hit in hits]
             }
             try:
@@ -2018,8 +2019,8 @@ class Recorder:
                 if config.options.debug_tracker:
                     args['debug'] = '1'
 
-                response = matomo.call(
-                    config.options.matomo_tracker_endpoint_path, args=args,
+                response = piwik.call(
+                    config.options.piwik_tracker_endpoint_path, args=args,
                     expected_content=None,
                     headers={'Content-type': 'application/json'},
                     data=data,
@@ -2051,10 +2052,10 @@ class Recorder:
 
                     stats.invalid_lines.extend(invalid_lines)
 
-                    logging.info("The Matomo tracker identified %s invalid requests on lines: %s" % (invalid_count, invalid_lines_str))
+                    logging.info("The Piwik tracker identified %s invalid requests on lines: %s" % (invalid_count, invalid_lines_str))
                 elif 'invalid' in response and response['invalid'] > 0:
-                    logging.info("The Matomo tracker identified %s invalid requests." % response['invalid'])
-            except MatomoHttpBase.Error as e:
+                    logging.info("The Piwik tracker identified %s invalid requests." % response['invalid'])
+            except PiwikHttpBase.Error as e:
                 # if the server returned 400 code, BulkTracking may not be enabled
                 if e.code == 400:
                     fatal_error("Server returned status 400 (Bad Request).\nIs the BulkTracking plugin disabled?", hits[0].filename, hits[0].lineno)
@@ -2201,7 +2202,7 @@ class Parser:
     def check_http_error(self, hit):
         if hit.status[0] in ('4', '5'):
             if config.options.replay_tracking:
-                # process error logs for replay tracking, since we don't care if matomo error-ed the first time
+                # process error logs for replay tracking, since we don't care if piwik error-ed the first time
                 return True
             elif config.options.enable_http_errors:
                 hit.is_error = True
@@ -2497,7 +2498,7 @@ class Parser:
                 hit.user_agent = format.get('user_agent')
 
                 # in case a format parser included enclosing quotes, remove them so they are not
-                # sent to Matomo
+                # sent to Piwik
                 if hit.user_agent.startswith('"'):
                     hit.user_agent = hit.user_agent[1:-1]
             except BaseFormatException:
@@ -2585,7 +2586,7 @@ class Parser:
             if config.options.replay_tracking:
                 # we need a query string and we only consider requests with piwik.php
                 if not hit.query_string or not self.is_hit_for_tracker(hit):
-                    invalid_line(line, 'no query string, or ' + hit.path.lower() + ' does not end with piwik.php/matomo.php')
+                    invalid_line(line, 'no query string, or ' + hit.path.lower() + ' does not end with piwik.php, ppms.php, js/ or js/tracker.php')
                     continue
 
                 query_arguments = urllib.parse.parse_qs(hit.query_string)
@@ -2678,11 +2679,11 @@ def fatal_error(error, filename=None, lineno=None):
 if __name__ == '__main__':
     try:
         config = Configuration()
-        # The matomo object depends on the config object, so we have to create
+        # The piwik object depends on the config object, so we have to create
         # it after creating the configuration.
-        matomo = MatomoHttpUrllib()
-        # The init_token_auth method may need the matomo option, so we must call
-        # it after creating the matomo object.
+        piwik = PiwikHttpUrllib()
+        # The init_token_auth method may need the piwik option, so we must call
+        # it after creating the piwik object.
         config.init_token_auth()
         stats = Statistics()
         resolver = config.get_resolver()
