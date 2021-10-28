@@ -1538,7 +1538,8 @@ class MatomoHttpUrllib(MatomoHttpBase):
         encoding = response.info().get_content_charset('utf-8')
         result = response.read()
         response.close()
-        return result.decode(encoding)
+        # Replaces characters that can't be decoded with binary representation (e.g. '\\x80abc')
+        return result.decode(encoding, 'backslashreplace')
 
     def _call_api(self, method, **kwargs):
         """
@@ -1663,6 +1664,9 @@ class StaticResolver:
         site = matomo.call_api(
             'SitesManager.getSiteFromId', idSite=self.site_id
         )
+        # Added for older Piwik server support
+        if isinstance(site, list):
+            site = site[0]
         if site.get('result') == 'error':
             fatal_error(
                 "cannot get the main URL of this site: %s" % site.get('message')
@@ -2612,7 +2616,7 @@ class Parser:
             Recorder.add_hits(hits)
 
     def is_hit_for_tracker(self, hit):
-        filesToCheck = ['piwik.php', 'matomo.php']
+        filesToCheck = ['piwik.php', 'ppms.php', '/js/', '/js/tracker.php']
         if config.options.replay_tracking_expected_tracker_file:
             filesToCheck = [config.options.replay_tracking_expected_tracker_file]
 
