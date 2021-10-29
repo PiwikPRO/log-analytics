@@ -10,7 +10,7 @@
 #
 # For more info see: https://piwik.org/log-analytics/ and https://piwik.org/docs/log-analytics-tool-how-to/
 #
-# Requires Python 3.5, 3.6 or 3.7
+# Requires Python 3.5+
 #
 from __future__ import print_function  # this is needed that python2 can run the script until the warning below
 
@@ -18,17 +18,15 @@ import sys
 
 if sys.version_info[0] != 3:
     print('The log importer currently does not support Python 2 any more.')
-    print('Please use Python 3.5, 3.6, 3.7 or 3.8')
+    print('Please use Python 3.5+')
     sys.exit(1)
 
 import base64
 import bz2
 import configparser
-import codecs
 import datetime
 import fnmatch
 import gzip
-import hashlib
 import http.client
 import inspect
 import itertools
@@ -43,8 +41,8 @@ import ssl
 import sys
 import threading
 import time
-import urllib.request, urllib.parse, urllib.error
-import urllib.request, urllib.error, urllib.parse
+import urllib.request
+import urllib.error
 import urllib.parse
 import subprocess
 import traceback
@@ -52,7 +50,6 @@ import socket
 import textwrap
 import collections
 import glob
-import io
 
 # Avoid "got more than 100 headers" error
 http.client._MAXHEADERS = 1000
@@ -74,8 +71,7 @@ DOWNLOAD_EXTENSIONS = set((
     'ibooks jar json mpg mp2 mp3 mp4 mpeg mov movie msi msp odb odf odg odp '
     'ods odt ogg ogv pdf phps ppt pptx qt qtm ra ram rar rpm rtf sea sit tar tbz '
     'bz2 tbz tgz torrent txt wav webm wma wmv wpd xls xlsx xml xsd z zip '
-    'azw3 epub mobi apk '
-    'md5 sig'
+    'azw3 epub mobi apk'
 ).split())
 
 # A good source is: http://phpbb-bots.blogspot.com/
