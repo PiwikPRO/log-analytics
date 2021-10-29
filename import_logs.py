@@ -17,7 +17,7 @@ from __future__ import print_function  # this is needed that python2 can run the
 import sys
 
 if sys.version_info[0] != 3:
-    print('The log importer currently does not support Python 2 any more.')
+    print('The log importer does not support Python 2 anymore.')
     print('Please use Python 3.5+')
     sys.exit(1)
 
@@ -1077,7 +1077,7 @@ class Configuration:
             success = len(config_file.read(self.options.config_file)) > 0
             if not success:
                 fatal_error(
-                    "the configuration file" + self.options.config_file + " could not be read. Please check permission. This file must be readable by the user running this script to get the authentication token"
+                    "the configuration file " + self.options.config_file + " could not be read. Please check permission. This file must be readable by the user running this script to get the authentication token"
                 )
 
             updatetokenfile = os.path.abspath(
