@@ -17,7 +17,7 @@ from __future__ import print_function  # this is needed that python2 can run the
 import sys
 
 if sys.version_info[0] != 3:
-    print('The log importer currently does not support Python 2 any more.')
+    print('The log importer does not support Python 2 anymore.')
     print('Please use Python 3.5, 3.6, 3.7 or 3.8')
     sys.exit(1)
 
