@@ -23,7 +23,6 @@ if sys.version_info[0] != 3:
 
 import base64
 import bz2
-import configparser
 import datetime
 import fnmatch
 import gzip
@@ -44,7 +43,6 @@ import time
 import urllib.request
 import urllib.error
 import urllib.parse
-import subprocess
 import traceback
 import socket
 import textwrap
@@ -529,6 +527,8 @@ class Configuration:
     class Error(Exception):
         pass
 
+    piwik_token = None
+
     def _create_parser(self):
         """
         Initialize and return the OptionParser instance.
@@ -624,26 +624,12 @@ class Configuration:
             '../../config/config.ini.php'),
         )
         parser.add_argument(
-            '--config', dest='config_file', default=default_config,
-            help=(
-                "This is only used when --login and --password is not used. "
-                "Piwik will read the configuration file (default: %(default)s) to "
-                "fetch the Super User token_auth from the config file. "
-            )
+            '--client-id', dest='client_id',
+            help="Client ID used when OAuth authentication is needed"
         )
         parser.add_argument(
-            '--login', dest='login',
-            help="You can manually specify the Piwik Super User login"
-        )
-        parser.add_argument(
-            '--password', dest='password',
-            help="You can manually specify the Piwik Super User password"
-        )
-        parser.add_argument(
-            '--token-auth', dest='piwik_token_auth',
-            help="Piwik user token_auth, the token_auth is found in Piwik > Settings > API. "
-                 "You must use a token_auth that has at least 'admin' or 'super user' permission. "
-                 "If you use a token_auth for a non admin user, your users' IP addresses will not be tracked properly. "
+            '--client-secret', dest='client_secret',
+            help="Client secret used when OAuth authentication is needed"
         )
 
         parser.add_argument(
@@ -786,10 +772,10 @@ class Configuration:
             help="Make URL path lowercase so paths with the same letters but different cases are "
                  "treated the same."
         )
-        parser.add_argument(
-            '--enable-testmode', dest='enable_testmode', default=False, action='store_true',
-            help="If set, it will try to get the token_auth from the piwik_tests directory"
-        )
+        # parser.add_argument(
+        #     '--enable-testmode', dest='enable_testmode', default=False, action='store_true',
+        #     help="If set, it will try to get the token_auth from the piwik_tests directory"
+        # )
         parser.add_argument(
             '--download-extensions', dest='download_extensions', default=None,
             help="By default Piwik tracks as Downloads the most popular file extensions. If you set this parameter (format: pdf,doc,...) then files with an extension found in the list will be imported as Downloads, other file extensions downloads will be skipped."
@@ -1037,90 +1023,27 @@ class Configuration:
         """
         If the token auth is not specified in the options, get it from Piwik.
         """
-        # Get superuser login/password from the options.
+        # Get OAuth token from the client ID/secret options.
         logging.debug('No token-auth specified')
 
-        if self.options.login and self.options.password:
-            piwik_login = self.options.login
-            piwik_password = self.options.password
+        if self.options.client_id and self.options.client_secret:
+            client_id = self.options.client_id
+            client_secret = self.options.client_secret
 
-            logging.debug('Using credentials: (login = %s, using password = %s)', piwik_login, 'YES' if piwik_password else 'NO')
+            logging.debug('Using credentials: (client_id = %s)', client_id)
             try:
-                api_result = piwik.call_api('UsersManager.createAppSpecificTokenAuth',
-                    userLogin=piwik_login,
-                    passwordConfirmation=piwik_password,
-                    description='Log importer',
-                    expireHours='48',
-                    _token_auth='',
-                    _url=self.options.piwik_api_url,
-                )
+                api_result = piwik.call_api('/auth/token', data={
+                    "grant_type": "client_credentials",
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                })
             except urllib.error.URLError as e:
-                fatal_error('error when fetching token_auth from the API: %s' % e)
+                fatal_error('error when fetching OAuth token from the API: %s' % e)
 
-            try:
-                return api_result['value']
-            except KeyError:
-                # Happens when the credentials are invalid.
-                message = api_result.get('message')
-                fatal_error(
-                    'error fetching authentication token token_auth%s' % (
-                    ': %s' % message if message else '')
-                )
+            return api_result
         else:
-            # Fallback to the given (or default) configuration file, then
-            # get the token from the API.
-            logging.debug(
-                'No credentials specified, reading them from "%s"',
-                self.options.config_file,
-            )
-            config_file = configparser.RawConfigParser(strict=False)
-            success = len(config_file.read(self.options.config_file)) > 0
-            if not success:
-                fatal_error(
-                    "the configuration file " + self.options.config_file + " could not be read. Please check permission. This file must be readable by the user running this script to get the authentication token"
-                )
-
-            updatetokenfile = os.path.abspath(
-                os.path.join(self.options.config_file,
-                    '../../misc/cron/updatetoken.php'),
-            )
-
-            phpBinary = config.options.php_binary
-
-            # Special handling for windows (only if given php binary does not differ from default)
-            is_windows = sys.platform.startswith('win')
-            if phpBinary == 'php' and is_windows:
-                try:
-                    processWin = subprocess.Popen('where php.exe', stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    [stdout, stderr] = processWin.communicate()
-                    if processWin.returncode == 0:
-                        phpBinary = stdout.strip()
-                    else:
-                        fatal_error("We couldn't detect PHP. It might help to add your php.exe to the path or alternatively run the importer using the --login and --password option")
-                except:
-                    fatal_error("We couldn't detect PHP. You can run the importer using the --login and --password option to fix this issue")
-
-            command = [phpBinary, updatetokenfile]
-            if self.options.enable_testmode:
-                command.append('--testmode')
-
-            hostname = urllib.parse.urlparse( self.options.piwik_url ).hostname
-            command.append('--piwik-domain=' + hostname )
-
-            command = subprocess.list2cmdline(command)
-
-#            logging.debug(command);
-
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-            [stdout, stderr] = process.communicate()
-            stdout, stderr = stdout.decode(), stderr.decode()
-            if process.returncode != 0:
-                fatal_error("`" + command + "` failed with error: " + stderr + ".\nReponse code was: " + str(process.returncode) + ". You can alternatively run the importer using the --login and --password option")
-
-            filename = stdout
-            credentials = open(filename, 'r').readline()
-            credentials = credentials.split('\t')
-            return credentials[1]
+            fatal_error(
+                'OAuth authentication failed. Make sure that --client-id and --client-secret options are provided.')
 
     def get_resolver(self):
         if self.options.site_id:
@@ -1131,12 +1054,9 @@ class Configuration:
             return DynamicResolver()
 
     def init_token_auth(self):
-        if not self.options.piwik_token_auth:
-            try:
-                self.options.piwik_token_auth = self._get_token_auth()
-            except PiwikHttpBase.Error as e:
-                fatal_error(e)
-        logging.debug('Authentication token token_auth is: %s', self.options.piwik_token_auth)
+        self.piwik_token = None
+        self.piwik_token = self._get_token_auth()
+        logging.debug('Authentication token is: %s', self.piwik_token)
 
 
 class Statistics:
@@ -1475,7 +1395,7 @@ class PiwikHttpUrllib(PiwikHttpBase):
 
             return urllib.request.HTTPRedirectHandler.redirect_request(self, req, fp, code, msg, hdrs, newurl)
 
-    def _call(self, path, args, headers=None, url=None, data=None):
+    def _call(self, path, args=None, headers=None, url=None, data=None):
         """
         Make a request to the Piwik site. It is up to the caller to format
         arguments, to embed authentication, etc.
@@ -1487,9 +1407,9 @@ class PiwikHttpUrllib(PiwikHttpBase):
         if data is None:
             # If Content-Type isn't defined, PHP do not parse the request's body.
             headers['Content-type'] = 'application/x-www-form-urlencoded'
-            data = urllib.parse.urlencode(args)
+            # data = urllib.parse.urlencode(args)
         elif not isinstance(data, str) and headers['Content-type'] == 'application/json':
-            data = json.dumps(data)
+            data = json.dumps(data).encode("utf-8")
 
         if args:
             path = path + '?' + urllib.parse.urlencode(args)
@@ -1504,7 +1424,7 @@ class PiwikHttpUrllib(PiwikHttpBase):
         except:
             timeout = None # the config global object may not be created at this point
 
-        request = urllib.request.Request(url + path, data.encode("utf-8"), headers)
+        request = urllib.request.Request(url + path, data, headers)
         logging.debug("Request url '%s'" % url)
         logging.debug("Request path '%s'" % path)
         logging.debug("Request query args '%s'" % args)
@@ -1544,7 +1464,26 @@ class PiwikHttpUrllib(PiwikHttpBase):
         # Replaces characters that can't be decoded with binary representation (e.g. '\\x80abc')
         return result.decode(encoding, 'backslashreplace')
 
-    def _call_api(self, method, **kwargs):
+    def _call_api(self, path, data=None, headers=None):
+        if headers is None:
+            headers = {
+                'Content-type': 'application/json',
+            }
+        else:
+            headers = dict(headers)
+
+        if config.piwik_token:
+            headers['Authorization'] = f"{config.piwik_token['token_type']} {config.piwik_token['access_token']}"
+
+        result = self._call(path, data=data, headers=headers)
+
+        try:
+            return json.loads(result)
+        except ValueError:
+            raise urllib.error.URLError('Piwik returned an invalid response: ' + result.decode("utf-8"))
+
+    # TODO: Remove
+    def _call_api_old(self, method, **kwargs):
         """
         Make a request to the Piwik API taking care of authentication, body
         formatting, etc.
@@ -1556,9 +1495,7 @@ class PiwikHttpUrllib(PiwikHttpBase):
             'filter_limit' : '-1',
         }
         # token_auth, by default, is taken from config.
-        token_auth = kwargs.pop('_token_auth', None)
-        if token_auth is None:
-            token_auth = config.options.piwik_token_auth
+        token_auth = config.piwik_token
         if token_auth:
             args['token_auth'] = token_auth
 
@@ -1661,27 +1598,16 @@ class StaticResolver:
     def __init__(self, site_id):
         self.site_id = site_id
         # Go get the main URL
-        try:
-            # if casting to int throws error we assume that given idsite is an siteUuid
-            int(self.site_id)
-            site = piwik.call_api(
-                'SitesManager.getSiteFromId', idSite=self.site_id
-            )
-        except ValueError:
-            site = piwik.call_api(
-                'SitesManager.getSiteFromUuid', siteUuid=self.site_id
-            )
-
-        # Added for older Piwik server support
-        if isinstance(site, list):
-            site = site[0]
+        site = piwik.call_api(f'/api/apps/v2/{site_id}')
 
         if site.get('result') == 'error':
-            fatal_error(
-                "cannot get the main URL of this site: %s" % site.get('message')
-            )
-        self._main_url = site['main_url']
-        self.site_id = site['idsite']
+            fatal_error("cannot get the main URL of this site: %s" % site.get('message'))
+
+        try:
+            self._main_url = site['data']['attributes']['urls'][0]
+            self.site_id = site['data']['id']
+        except KeyError:
+            pass
 
         stats.piwik_sites.add(self.site_id)
 
@@ -2020,7 +1946,6 @@ class Recorder:
         """
         if not config.options.dry_run:
             data = {
-                'token_auth': config.options.piwik_token_auth,
                 'requests': [self._get_hit_args(hit) for hit in hits]
             }
             try:
