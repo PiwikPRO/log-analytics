@@ -118,6 +118,10 @@ PIWIK_EXPECTED_IMAGE = base64.b64decode(
 ## Formats.
 ##
 
+
+def _get_site_id_and_url(site):
+    return site['data']['id'], site['data']['attributes']['urls'][0]
+
 class BaseFormatException(Exception): pass
 
 class BaseFormat:
@@ -992,14 +996,14 @@ class Configuration:
 
 
         if not (self.options.piwik_url.startswith('http://') or self.options.piwik_url.startswith('https://')):
-            self.options.piwik_url = 'http://' + self.options.piwik_url
+            self.options.piwik_url = 'https://' + self.options.piwik_url
         logging.debug('Piwik Tracker API URL is: %s', self.options.piwik_url)
 
         if not self.options.piwik_api_url:
             self.options.piwik_api_url = self.options.piwik_url
 
         if not (self.options.piwik_api_url.startswith('http://') or self.options.piwik_api_url.startswith('https://')):
-            self.options.piwik_api_url = 'http://' + self.options.piwik_api_url
+            self.options.piwik_api_url = 'https://' + self.options.piwik_api_url
         logging.debug('Piwik Analytics API URL is: %s', self.options.piwik_api_url)
 
         if self.options.recorders < 1:
@@ -1404,11 +1408,7 @@ class PiwikHttpUrllib(PiwikHttpBase):
             url = config.options.piwik_url
         headers = headers or {}
 
-        if data is None:
-            # If Content-Type isn't defined, PHP do not parse the request's body.
-            headers['Content-type'] = 'application/x-www-form-urlencoded'
-            # data = urllib.parse.urlencode(args)
-        elif not isinstance(data, str) and headers['Content-type'] == 'application/json':
+        if data and not isinstance(data, str) and headers['Content-type'] == 'application/json':
             data = json.dumps(data).encode("utf-8")
 
         if args:
@@ -1462,9 +1462,11 @@ class PiwikHttpUrllib(PiwikHttpBase):
         result = response.read()
         response.close()
         # Replaces characters that can't be decoded with binary representation (e.g. '\\x80abc')
-        return result.decode(encoding, 'backslashreplace')
+        result = result.decode(encoding, 'backslashreplace')
+        logging.debug("Response '%s'" % result)
+        return result
 
-    def _call_api(self, path, data=None, headers=None):
+    def _call_api(self, path, args=None, data=None, headers=None):
         if headers is None:
             headers = {
                 'Content-type': 'application/json',
@@ -1475,57 +1477,12 @@ class PiwikHttpUrllib(PiwikHttpBase):
         if config.piwik_token:
             headers['Authorization'] = f"{config.piwik_token['token_type']} {config.piwik_token['access_token']}"
 
-        result = self._call(path, data=data, headers=headers)
+        result = self._call(path, args=args, data=data, headers=headers)
 
         try:
             return json.loads(result)
         except ValueError:
             raise urllib.error.URLError('Piwik returned an invalid response: ' + result.decode("utf-8"))
-
-    # TODO: Remove
-    def _call_api_old(self, method, **kwargs):
-        """
-        Make a request to the Piwik API taking care of authentication, body
-        formatting, etc.
-        """
-        args = {
-            'module' : 'API',
-            'format' : 'json',
-            'method' : method,
-            'filter_limit' : '-1',
-        }
-        # token_auth, by default, is taken from config.
-        token_auth = config.piwik_token
-        if token_auth:
-            args['token_auth'] = token_auth
-
-        url = kwargs.pop('_url', None)
-        if url is None:
-            url = config.options.piwik_api_url
-
-
-        if kwargs:
-            args.update(kwargs)
-
-        # Convert lists into appropriate format.
-        # See: http://developer.piwik.org/api-reference/reporting-api#passing-an-array-of-data-as-a-parameter
-        # Warning: we have to pass the parameters in order: foo[0], foo[1], foo[2]
-        # and not foo[1], foo[0], foo[2] (it will break Piwik otherwise.)
-        final_args = []
-        for key, value in args.items():
-            if isinstance(value, (list, tuple)):
-                for index, obj in enumerate(value):
-                    final_args.append(('%s[%d]' % (key, index), obj))
-            else:
-                final_args.append((key, value))
-
-
-        res = self._call('/index.php', final_args, url=url)
-
-        try:
-            return json.loads(res)
-        except ValueError:
-            raise urllib.error.URLError('Piwik returned an invalid response: ' + res.decode("utf-8") )
 
     def _call_wrapper(self, func, expected_response, on_failure, *args, **kwargs):
         """
@@ -1578,8 +1535,7 @@ class PiwikHttpUrllib(PiwikHttpBase):
                     time.sleep(delay_after_failure)
 
     def call(self, path, args, expected_content=None, headers=None, data=None, on_failure=None):
-        return self._call_wrapper(self._call, expected_content, on_failure, path, args, headers,
-                                    data=data)
+        return self._call_wrapper(self._call, expected_content, on_failure, path, args, headers, data=data)
 
     def call_api(self, method, **kwargs):
         return self._call_wrapper(self._call_api, None, None, method, **kwargs)
@@ -1604,8 +1560,7 @@ class StaticResolver:
             fatal_error("cannot get the main URL of this site: %s" % site.get('message'))
 
         try:
-            self._main_url = site['data']['attributes']['urls'][0]
-            self.site_id = site['data']['id']
+            self.site_id, self._main_url = _get_site_id_and_url(site)
         except KeyError:
             pass
 
@@ -1622,71 +1577,17 @@ class DynamicResolver:
     Use Piwik API to determine the site ID.
     """
 
-    _add_site_lock = threading.Lock()
-
     def __init__(self):
-        self._cache = {}
-        if config.options.replay_tracking:
-            # get existing sites
-            self._cache['sites'] = piwik.call_api('SitesManager.getAllSites')
-            for f in list(self._cache['sites'].keys()):
-                # duplicate the rows but using site_uuid as key so cache is searchable by site_uuid
-                self._cache['sites'][self._cache['sites'][f]['site_uuid']] = self._cache['sites'][f]
+        self._cache = {'sites': {}}
 
     def _get_site_id_from_hit_host(self, hit):
-        return piwik.call_api(
-            'SitesManager.getSitesIdFromSiteUrl',
-            url=hit.host,
-        )
-
-    def _add_site(self, hit):
-        main_url = 'http://' + hit.host
-        DynamicResolver._add_site_lock.acquire()
-
-        try:
-            # After we obtain the lock, make sure the site hasn't already been created.
-            res = self._get_site_id_from_hit_host(hit)
-            if res:
-                return res[0]['idsite']
-
-            # The site doesn't exist.
-            logging.debug('No Piwik site found for the hostname: %s', hit.host)
-            if config.options.site_id_fallback is not None:
-                logging.debug('Using default site for hostname: %s', hit.host)
-                return config.options.site_id_fallback
-            elif config.options.add_sites_new_hosts:
-                if config.options.dry_run:
-                    # Let's just return a fake ID.
-                    return 0
-                logging.debug('Creating a Piwik site for hostname %s', hit.host)
-                result = piwik.call_api(
-                    'SitesManager.addSite',
-                    siteName=hit.host,
-                    urls=[main_url],
-                )
-                if result.get('result') == 'error':
-                    logging.error("Couldn't create a Piwik site for host %s: %s",
-                        hit.host, result.get('message'),
-                    )
-                    return None
-                else:
-                    site_id = result['value']
-                    stats.piwik_sites_created.append((hit.host, site_id))
-                    return site_id
-            else:
-                # The site doesn't exist, we don't want to create new sites and
-                # there's no default site ID. We thus have to ignore this hit.
-                return None
-        finally:
-            DynamicResolver._add_site_lock.release()
+        return piwik.call_api('/api/tracker/v2/settings/app/url', args={'appUrl': hit.host})
 
     def _resolve(self, hit):
         res = self._get_site_id_from_hit_host(hit)
         if res:
             # The site already exists.
-            site_id = res[0]['idsite']
-        else:
-            site_id = self._add_site(hit)
+            site_id, _ = _get_site_id_and_url(res)
         if site_id is not None:
             stats.piwik_sites.add(site_id)
         return site_id
@@ -1699,9 +1600,14 @@ class DynamicResolver:
         site_id = hit.args['idsite']
         if site_id in self._cache['sites']:
             stats.piwik_sites.add(site_id)
-            return (site_id, self._cache['sites'][site_id]['main_url'])
+            return _get_site_id_and_url(self._cache['sites'][site_id])
         else:
-            return (None, None)
+            try:
+                site = piwik.call_api(f'/api/tracker/v2/settings/app/{site_id}')
+                self._cache['sites'][site_id] = site
+                return _get_site_id_and_url(site)
+            except:
+                return (None, None)
 
     def _resolve_by_host(self, hit):
         """
@@ -1738,7 +1644,8 @@ class DynamicResolver:
         elif format.regex is not None and 'host' not in format.regex.groupindex and not config.options.log_hostname:
             fatal_error(
                 "the selected log format doesn't include the hostname: you must "
-                "specify the Piwik site ID with the --idsite argument"
+                "specify the Piwik site ID with the --idsite argument "
+                "or host with --hostname argument"
             )
 
 class Recorder:
