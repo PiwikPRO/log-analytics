@@ -1475,7 +1475,7 @@ class PiwikHttpUrllib(PiwikHttpBase):
             headers = dict(headers)
 
         if config.piwik_token:
-            headers['Authorization'] = f"{config.piwik_token['token_type']} {config.piwik_token['access_token']}"
+            headers['Authorization'] = config.piwik_token['token_type'] + ' ' + config.piwik_token['access_token']
 
         result = self._call(path, args=args, data=data, headers=headers)
 
@@ -1571,7 +1571,7 @@ class StaticResolver:
         self.site_id = site_id
         # Go get the main URL
         try:
-            site = piwik.auth_call_api(f'/api/apps/v2/{site_id}')
+            site = piwik.auth_call_api('/api/apps/v2/%s' % site_id)
         except urllib.error.URLError as e:
             if e.code == 404:
                 self.site_id = site_id
@@ -1634,7 +1634,7 @@ class DynamicResolver:
             return _get_site_id_and_url(self._cache['sites'][site_id])
         else:
             try:
-                site = piwik.call_api(f'/api/tracker/v2/settings/app/{site_id}')
+                site = piwik.call_api('/api/tracker/v2/settings/app/%s' % site_id)
                 self._cache['sites'][site_id] = site
                 return _get_site_id_and_url(site)
             except:
