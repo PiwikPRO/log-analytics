@@ -1036,7 +1036,7 @@ class Configuration:
 
             logging.debug('Using credentials: (client_id = %s)', client_id)
             try:
-                api_result = piwik.call_api('/auth/token', data={
+                api_result = piwik._call_api('/auth/token', data={
                     "grant_type": "client_credentials",
                     "client_id": client_id,
                     "client_secret": client_secret,
@@ -1534,11 +1534,27 @@ class PiwikHttpUrllib(PiwikHttpBase):
 
                     time.sleep(delay_after_failure)
 
+    def _call_authentication_wrapper(self, func, *args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except urllib.error.URLError as e:
+            if e.code == 401:
+                config.init_token_auth()
+                return func(*args, **kwargs)
+            else:
+                raise
+
+    def auth_call(self, path, args, headers=None, data=None):
+        return self._call_authentication_wrapper(self._call, path, args, headers, data=data)
+
+    def auth_call_api(self, method, **kwargs):
+        return self._call_authentication_wrapper(self._call_api, method, **kwargs)
+
     def call(self, path, args, expected_content=None, headers=None, data=None, on_failure=None):
-        return self._call_wrapper(self._call, expected_content, on_failure, path, args, headers, data=data)
+        return self._call_wrapper(self.auth_call, expected_content, on_failure, path, args, headers, data=data)
 
     def call_api(self, method, **kwargs):
-        return self._call_wrapper(self._call_api, None, None, method, **kwargs)
+        return self._call_wrapper(self.auth_call_api, None, None, method, **kwargs)
 
 ##
 ## Resolvers.
@@ -1554,15 +1570,23 @@ class StaticResolver:
     def __init__(self, site_id):
         self.site_id = site_id
         # Go get the main URL
-        site = piwik.call_api(f'/api/apps/v2/{site_id}')
-
-        if site.get('result') == 'error':
-            fatal_error("cannot get the main URL of this site: %s" % site.get('message'))
-
         try:
-            self.site_id, self._main_url = _get_site_id_and_url(site)
-        except KeyError:
-            pass
+            site = piwik.auth_call_api(f'/api/apps/v2/{site_id}')
+        except urllib.error.URLError as e:
+            if e.code == 404:
+                self.site_id = site_id
+                self._main_url = None
+                fatal_error("cannot get the main URL of this site ID: %s" % site_id)
+            else:
+                raise
+        else:
+            if site.get('result') == 'error':
+                fatal_error("cannot get the main URL of this site: %s" % site.get('message'))
+
+            try:
+                self.site_id, self._main_url = _get_site_id_and_url(site)
+            except KeyError:
+                pass
 
         stats.piwik_sites.add(self.site_id)
 
@@ -1581,9 +1605,16 @@ class DynamicResolver:
         self._cache = {'sites': {}}
 
     def _get_site_id_from_hit_host(self, hit):
-        return piwik.call_api('/api/tracker/v2/settings/app/url', args={'appUrl': hit.host})
+        # TODO: Docs use app_url instead of appUrl, find a way to fix that
+        try:
+            return piwik.auth_call_api('/api/tracker/v2/settings/app/url', args={'appUrl': hit.host})
+        except urllib.error.URLError as e:
+            if e.code == 404:
+                return None
+            raise
 
     def _resolve(self, hit):
+        site_id = None
         res = self._get_site_id_from_hit_host(hit)
         if res:
             # The site already exists.
@@ -1853,56 +1884,57 @@ class Recorder:
         """
         if not config.options.dry_run:
             data = {
-                'requests': [self._get_hit_args(hit) for hit in hits]
+                'requests': list(filter(lambda hit: hit is not None, [self._get_hit_args(hit) for hit in hits]))
             }
-            try:
-                args = {}
-
-                if config.options.debug_tracker:
-                    args['debug'] = '1'
-
-                response = piwik.call(
-                    config.options.piwik_tracker_endpoint_path, args=args,
-                    expected_content=None,
-                    headers={'Content-type': 'application/json'},
-                    data=data,
-                    on_failure=self._on_tracking_failure
-                )
-
-                if config.options.debug_tracker:
-                    logging.debug('tracker response:\n%s' % response)
-
-                # check for invalid requests
+            if len(data['requests']) > 0:
                 try:
-                    response = json.loads(response)
-                except:
-                    logging.info("bulk tracking returned invalid JSON")
+                    args = {}
 
-                    # don't display the tracker response if we're debugging the tracker.
-                    # debug tracker output will always break the normal JSON output.
-                    if not config.options.debug_tracker:
-                        logging.info("tracker response:\n%s" % response)
+                    if config.options.debug_tracker:
+                        args['debug'] = '1'
 
-                    response = {}
+                    response = piwik.call(
+                        config.options.piwik_tracker_endpoint_path, args=args,
+                        expected_content=None,
+                        headers={'Content-type': 'application/json'},
+                        data=data,
+                        on_failure=self._on_tracking_failure
+                    )
 
-                if ('invalid_indices' in response and isinstance(response['invalid_indices'], list) and
-                    response['invalid_indices']):
-                    invalid_count = len(response['invalid_indices'])
+                    if config.options.debug_tracker:
+                        logging.debug('tracker response:\n%s' % response)
 
-                    invalid_lines = [str(hits[index].lineno) for index in response['invalid_indices']]
-                    invalid_lines_str = ", ".join(invalid_lines)
+                    # check for invalid requests
+                    try:
+                        response = json.loads(response)
+                    except:
+                        logging.info("bulk tracking returned invalid JSON")
 
-                    stats.invalid_lines.extend(invalid_lines)
+                        # don't display the tracker response if we're debugging the tracker.
+                        # debug tracker output will always break the normal JSON output.
+                        if not config.options.debug_tracker:
+                            logging.info("tracker response:\n%s" % response)
 
-                    logging.info("The Piwik tracker identified %s invalid requests on lines: %s" % (invalid_count, invalid_lines_str))
-                elif 'invalid' in response and response['invalid'] > 0:
-                    logging.info("The Piwik tracker identified %s invalid requests." % response['invalid'])
-            except PiwikHttpBase.Error as e:
-                # if the server returned 400 code, BulkTracking may not be enabled
-                if e.code == 400:
-                    fatal_error("Server returned status 400 (Bad Request).\nIs the BulkTracking plugin disabled?", hits[0].filename, hits[0].lineno)
+                        response = {}
 
-                raise
+                    if ('invalid_indices' in response and isinstance(response['invalid_indices'], list) and
+                        response['invalid_indices']):
+                        invalid_count = len(response['invalid_indices'])
+
+                        invalid_lines = [str(hits[index].lineno) for index in response['invalid_indices']]
+                        invalid_lines_str = ", ".join(invalid_lines)
+
+                        stats.invalid_lines.extend(invalid_lines)
+
+                        logging.info("The Piwik tracker identified %s invalid requests on lines: %s" % (invalid_count, invalid_lines_str))
+                    elif 'invalid' in response and response['invalid'] > 0:
+                        logging.info("The Piwik tracker identified %s invalid requests." % response['invalid'])
+                except PiwikHttpBase.Error as e:
+                    # if the server returned 400 code, BulkTracking may not be enabled
+                    if e.code == 400:
+                        fatal_error("Server returned status 400 (Bad Request).\nIs the BulkTracking plugin disabled?", hits[0].filename, hits[0].lineno)
+
+                    raise
 
         stats.count_lines_recorded.advance(len(hits))
 
