@@ -776,10 +776,6 @@ class Configuration:
             help="Make URL path lowercase so paths with the same letters but different cases are "
                  "treated the same."
         )
-        # parser.add_argument(
-        #     '--enable-testmode', dest='enable_testmode', default=False, action='store_true',
-        #     help="If set, it will try to get the token_auth from the piwik_tests directory"
-        # )
         parser.add_argument(
             '--download-extensions', dest='download_extensions', default=None,
             help="By default Piwik tracks as Downloads the most popular file extensions. If you set this parameter (format: pdf,doc,...) then files with an extension found in the list will be imported as Downloads, other file extensions downloads will be skipped."
@@ -1025,10 +1021,8 @@ class Configuration:
 
     def _get_token_auth(self):
         """
-        If the token auth is not specified in the options, get it from Piwik.
+        Get OAuth token based on client ID and secret
         """
-        # Get OAuth token from the client ID/secret options.
-        logging.debug('No token-auth specified')
 
         if self.options.client_id and self.options.client_secret:
             client_id = self.options.client_id
