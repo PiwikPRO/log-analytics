@@ -894,6 +894,14 @@ def test_custom_log_date_format_option():
 
     assert hits[0]['date'] == datetime.datetime(2012, 2, 10, 16, 42, 7)
 
+def test_static_resolver_with_uuid_mapped_to_idsite():
+
+    import_logs.piwik = Piwik()
+    import_logs.stats = import_logs.Statistics()
+    import_logs.resolver = import_logs.StaticResolver("194edb22-394a-48e5-aed8-0797ab29d2ae")
+
+    assert "12345" in import_logs.stats.piwik_sites
+
 def test_static_resolver_with_idsite():
 
     import_logs.piwik = Piwik()
