@@ -1599,7 +1599,6 @@ class DynamicResolver:
         self._cache = {'sites': {}}
 
     def _get_site_id_from_hit_host(self, hit):
-        # TODO: Docs use app_url instead of appUrl, find a way to fix that
         try:
             return piwik.auth_call_api('/api/tracker/v2/settings/app/url', args={'appUrl': hit.host})
         except urllib.error.URLError as e:
