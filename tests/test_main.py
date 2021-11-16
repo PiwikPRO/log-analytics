@@ -210,12 +210,17 @@ class Recorder(object):
 
 class Piwik(object):
     """Mock piwik api requests for StaticResolver tests"""
-    def call_api(cls, method, **kwargs):
+    def auth_call_api(cls, method, **kwargs):
         return {
-                 'idsite': '12345',
-                 'main_url': 'http://example.com',
-                 'site_uuid': '194edb22-394a-48e5-aed8-0797ab29d2ae',
-             }
+            'data': {
+                'id': '194edb22-394a-48e5-aed8-0797ab29d2ae',
+                'attributes': {
+                    'urls': [
+                        'https://example.com'
+                    ]
+                }
+            }
+        }
 
 def test_replay_tracking_seconds_to_add_to_date():
     """Test data parsing from sample log file."""
@@ -1277,18 +1282,10 @@ def test_bz2_parsing():
     assert hits[0]['length'] == 444
     assert hits[0]['userid'] == 'theboss'
 
-def test_static_resolver_with_uuid_mapped_to_idsite():
+def test_static_resolver_with_idsite():
 
     import_logs.piwik = Piwik()
     import_logs.stats = import_logs.Statistics()
     import_logs.resolver = import_logs.StaticResolver("194edb22-394a-48e5-aed8-0797ab29d2ae")
 
-    assert "12345" in import_logs.stats.piwik_sites
-
-def test_static_resolver_with_idsite():
-
-    import_logs.piwik = Piwik()
-    import_logs.stats = import_logs.Statistics()
-    import_logs.resolver = import_logs.StaticResolver("12345")
-
-    assert "12345" in import_logs.stats.piwik_sites
+    assert "194edb22-394a-48e5-aed8-0797ab29d2ae" in import_logs.stats.piwik_sites
