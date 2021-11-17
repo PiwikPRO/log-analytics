@@ -605,27 +605,10 @@ class Configuration:
             help="Change the default progress delay"
         )
         parser.add_argument(
-            '--add-sites-new-hosts', dest='add_sites_new_hosts',
-            action='store_true', default=False,
-            help="When a hostname is found in the log file, but not matched to any website "
-            "in Piwik, automatically create a new website in Piwik with this hostname to "
-            "import the logs"
-        )
-        parser.add_argument(
             '--idsite', dest='site_id',
             help= ("When specified, "
                    "data in the specified log files will be tracked for this Piwik site ID."
                    " The script will not auto-detect the website based on the log line hostname (new websites will not be automatically created).")
-        )
-        parser.add_argument(
-            '--idsite-fallback', dest='site_id_fallback',
-            help="Default Piwik site ID to use if the hostname doesn't match any "
-            "known Website's URL. New websites will not be automatically created. "
-            "                         Used only if --add-sites-new-hosts or --idsite are not set",
-        )
-        default_config = os.path.abspath(
-            os.path.join(os.path.dirname(__file__),
-            '../../config/config.ini.php'),
         )
         parser.add_argument(
             '--client-id', dest='client_id',
@@ -1053,7 +1036,8 @@ class Configuration:
 
     def init_token_auth(self):
         self.piwik_token = None
-        self.piwik_token = self._get_token_auth()
+        if not config.options.replay_tracking:
+            self.piwik_token = self._get_token_auth()
         logging.debug('Authentication token is: %s', self.piwik_token)
 
 
@@ -1089,7 +1073,6 @@ class Statistics:
         self.time_stop = None
 
         self.piwik_sites = set()                # sites ID
-        self.piwik_sites_created = []           # (hostname, site ID)
         self.piwik_sites_ignored = set()        # hostname
 
         self.count_lines_parsed = self.Counter()
@@ -1189,8 +1172,6 @@ Website import summary
 
     %(count_lines_recorded)d requests imported to %(total_sites)d sites
         %(total_sites_existing)d sites already existed
-        %(total_sites_created)d sites were created:
-%(sites_created)s
     %(total_sites_ignored)d distinct hostnames did not match any existing site:
 %(sites_ignored)s
 %(sites_ignored_tips)s
@@ -1231,12 +1212,7 @@ Processing your log data
     'count_lines_no_site': self.count_lines_no_site.value,
     'count_lines_hostname_skipped': self.count_lines_hostname_skipped.value,
     'total_sites': len(self.piwik_sites),
-    'total_sites_existing': len(self.piwik_sites - set(site_id for hostname, site_id in self.piwik_sites_created)),
-    'total_sites_created': len(self.piwik_sites_created),
-    'sites_created': self._indent_text(
-            ['%s (ID: %d)' % (hostname, site_id) for hostname, site_id in self.piwik_sites_created],
-            level=3,
-        ),
+    'total_sites_existing': len(self.piwik_sites),
     'total_sites_ignored': len(self.piwik_sites_ignored),
     'sites_ignored': self._indent_text(
             self.piwik_sites_ignored, level=3,
@@ -1245,11 +1221,6 @@ Processing your log data
         TIPs:
          - if one of these hosts is an alias host for one of the websites
            in Piwik, you can add this host as an "Alias URL" in Settings > Websites.
-         - use --add-sites-new-hosts if you wish to automatically create
-           one website for each of these hosts in Piwik rather than discarding
-           these requests.
-         - use --idsite-fallback to force all these log lines with a new hostname
-           to be recorded in a specific idsite (for example for troubleshooting/visualizing the data)
          - use --idsite to force all lines in the specified log files
            to be all recorded in the specified idsite
          - or you can also manually create a new Website in Piwik with the URL set to this hostname
@@ -1564,24 +1535,26 @@ class StaticResolver:
 
     def __init__(self, site_id):
         self.site_id = site_id
-        # Go get the main URL
-        try:
-            site = piwik.auth_call_api('/api/apps/v2/%s' % site_id)
-        except urllib.error.URLError as e:
-            if e.code == 404:
-                self.site_id = site_id
-                self._main_url = None
-                fatal_error("cannot get the main URL of this site ID: %s" % site_id)
-            else:
-                raise
-        else:
-            if site.get('result') == 'error':
-                fatal_error("cannot get the main URL of this site: %s" % site.get('message'))
-
+        self._main_url = None
+        if not config.options.replay_tracking:
+            # Go get the main URL
             try:
-                self.site_id, self._main_url = _get_site_id_and_url(site)
-            except KeyError:
-                pass
+                site = piwik.auth_call_api('/api/apps/v2/%s' % site_id)
+            except urllib.error.URLError as e:
+                if e.code == 404:
+                    fatal_error("cannot get the main URL of this site ID: %s" % site_id)
+                else:
+                    raise
+            else:
+                if site.get('result') == 'error':
+                    fatal_error("cannot get the main URL of this site: %s" % site.get('message'))
+
+                try:
+                    self.site_id, self._main_url = _get_site_id_and_url(site)
+                except KeyError:
+                    pass
+
+        stats.piwik_sites.add(self.site_id)
 
     def resolve(self, hit):
         return (self.site_id, self._main_url)
@@ -1621,16 +1594,8 @@ class DynamicResolver:
         otherwise return (None, None) tuple.
         """
         site_id = hit.args['idsite']
-        if site_id in self._cache['sites']:
-            stats.piwik_sites.add(site_id)
-            return _get_site_id_and_url(self._cache['sites'][site_id])
-        else:
-            try:
-                site = piwik.call_api('/api/tracker/v2/settings/app/%s' % site_id)
-                self._cache['sites'][site_id] = site
-                return _get_site_id_and_url(site)
-            except:
-                return (None, None)
+        stats.piwik_sites.add(site_id)
+        return site_id, None
 
     def _resolve_by_host(self, hit):
         """
@@ -1645,7 +1610,7 @@ class DynamicResolver:
             site_id = self._resolve(hit)
             logging.debug('Site ID for hostname %s: %s', hit.host, site_id)
             self._cache[hit.host] = site_id
-        return (site_id, 'http://' + hit.host)
+        return (site_id, 'https://' + hit.host)
 
     def resolve(self, hit):
         """
@@ -1789,10 +1754,6 @@ class Recorder:
         if hit.query_string and not config.options.strip_query_string:
             path += config.options.query_string_delimiter + hit.query_string
 
-        # only prepend main url / host if it's a path
-        url_prefix = self._get_host_with_protocol(hit.host, main_url) if hasattr(hit, 'host') else main_url
-        url = (url_prefix if path.startswith('/') else '') + path[:1024]
-
         # handle custom variables before generating args dict
         if config.options.enable_bots:
             if hit.is_robot:
@@ -1805,8 +1766,6 @@ class Recorder:
         args = {
             'rec': '1',
             'apiv': '1',
-            'url': url,
-            'urlref': hit.referrer[:1024],
             'cip': hit.ip,
             'cdt': self.date_to_piwik(hit.date),
             'idsite': site_id,
@@ -1818,6 +1777,13 @@ class Recorder:
         if config.options.replay_tracking:
             # prevent request to be force recorded when option replay-tracking
             args['rec'] = '0'
+        else:
+            # only prepend main url / host if it's a path
+            url_prefix = self._get_host_with_protocol(hit.host, main_url) if hasattr(hit, 'host') else main_url
+            url = (url_prefix if path.startswith('/') else '') + path[:1024]
+
+            args['url'] = url
+            args['urlref'] = hit.referrer[:1024]
 
         # idsite is already determined by resolver
         if 'idsite' in hit.args:
@@ -1880,15 +1846,12 @@ class Recorder:
                 headers = None
                 data = None
                 args = dict(
-                    (k, v.encode(config.options.encoding))
+                    (k, v.encode(config.options.encoding) if isinstance(v, str) else v)
                     for (k, v) in self._get_hit_args(hits[0]).items()
                 )
-                if config.options.piwik_token_auth:
-                    args['token_auth'] = config.options.piwik_token_auth
             else:
                 headers = {'Content-type': 'application/json'}
                 data = {
-                    'token_auth': config.options.piwik_token_auth,
                     'requests': [self._get_hit_args(hit) for hit in hits]
                 }
                 args = {}
