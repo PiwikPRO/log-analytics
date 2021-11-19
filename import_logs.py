@@ -746,8 +746,8 @@ class Configuration:
             help="Log files encoding (default: %(default)s)"
         )
         parser.add_argument(
-            '--disable-bulk-tracking', dest='use_bulk_tracking',
-            default=True, action='store_false',
+            '--enable-bulk-tracking', dest='use_bulk_tracking',
+            default=False, action='store_true',
             help="Disables use of bulk tracking so recorders record one hit at a time."
         )
         parser.add_argument(
