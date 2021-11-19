@@ -1171,7 +1171,6 @@ Website import summary
 ----------------------
 
     %(count_lines_recorded)d requests imported to %(total_sites)d sites
-        %(total_sites_existing)d sites already existed
     %(total_sites_ignored)d distinct hostnames did not match any existing site:
 %(sites_ignored)s
 %(sites_ignored_tips)s
@@ -1181,12 +1180,6 @@ Performance summary
 
     Total time: %(total_time)d seconds
     Requests imported per second: %(speed_recording)s requests per second
-
-Processing your log data
-------------------------
-
-    In order for your logs to be processed by Piwik, you may need to run the following command:
-     ./console core:archive --force-all-websites --url='%(url)s'
 ''' % {
 
     'count_lines_recorded': self.count_lines_recorded.value,
@@ -1212,7 +1205,6 @@ Processing your log data
     'count_lines_no_site': self.count_lines_no_site.value,
     'count_lines_hostname_skipped': self.count_lines_hostname_skipped.value,
     'total_sites': len(self.piwik_sites),
-    'total_sites_existing': len(self.piwik_sites),
     'total_sites_ignored': len(self.piwik_sites_ignored),
     'sites_ignored': self._indent_text(
             self.piwik_sites_ignored, level=3,
@@ -1871,33 +1863,6 @@ class Recorder:
                 if config.options.debug_tracker:
                     logging.debug('tracker response:\n%s' % response)
 
-                if not single:
-                    # check for invalid requests
-                    try:
-                        response = json.loads(response)
-                    except:
-                        logging.info("bulk tracking returned invalid JSON")
-
-                        # don't display the tracker response if we're debugging the tracker.
-                        # debug tracker output will always break the normal JSON output.
-                        if not config.options.debug_tracker:
-                            logging.info("tracker response:\n%s" % response)
-
-                        response = {}
-
-                    if ('invalid_indices' in response and isinstance(response['invalid_indices'], list) and
-                            response['invalid_indices']):
-                        invalid_count = len(response['invalid_indices'])
-
-                        invalid_lines = [str(hits[index].lineno) for index in response['invalid_indices']]
-                        invalid_lines_str = ", ".join(invalid_lines)
-
-                        stats.invalid_lines.extend(invalid_lines)
-
-                        logging.info("The Piwik tracker identified %s invalid requests on lines: %s" % (
-                        invalid_count, invalid_lines_str))
-                    elif 'invalid' in response and response['invalid'] > 0:
-                        logging.info("The Piwik tracker identified %s invalid requests." % response['invalid'])
             except PiwikHttpBase.Error as e:
                 # if the server returned 400 code, BulkTracking may not be enabled
                 if e.code == 400:
