@@ -1526,6 +1526,7 @@ class StaticResolver:
     """
 
     def __init__(self, site_id):
+        self.initial_site_id = site_id
         self.site_id = site_id
         self._main_url = None
         if not config.options.replay_tracking:
@@ -1534,9 +1535,8 @@ class StaticResolver:
                 site = piwik.auth_call_api('/api/apps/v2/%s' % site_id)
             except urllib.error.URLError as e:
                 if e.code == 404:
-                    fatal_error("cannot get the main URL of this site ID: %s" % site_id)
-                else:
-                    raise
+                    # fatal_error("cannot get the main URL of this site ID: %s" % site_id)
+                    self.site_id = None
             else:
                 if site.get('result') == 'error':
                     fatal_error("cannot get the main URL of this site: %s" % site.get('message'))
@@ -1546,7 +1546,8 @@ class StaticResolver:
                 except KeyError:
                     pass
 
-        stats.piwik_sites.add(self.site_id)
+        if self.site_id is not None:
+            stats.piwik_sites.add(self.site_id)
 
     def resolve(self, hit):
         return (self.site_id, self._main_url)
@@ -1736,9 +1737,12 @@ class Recorder:
             if config.options.replay_tracking:
                 stats.piwik_sites_ignored.add('unrecognized site ID %s' % hit.args.get('idsite'))
             else:
-                stats.piwik_sites_ignored.add(hit.host)
+                try:
+                    stats.piwik_sites_ignored.add(hit.host)
+                except AttributeError:
+                    stats.piwik_sites_ignored.add(resolver.initial_site_id)
             stats.count_lines_no_site.increment()
-            return
+            return {}
 
         stats.dates_recorded.add(hit.date.date())
 
@@ -1833,46 +1837,55 @@ class Recorder:
         Inserts several hits into Piwik.
         """
         if not config.options.dry_run:
+            hit_count = 0
             if single:
                 assert len(hits) == 1
                 headers = None
                 data = None
+
                 args = dict(
                     (k, v.encode(config.options.encoding) if isinstance(v, str) else v)
                     for (k, v) in self._get_hit_args(hits[0]).items()
                 )
+                hit_count = int(len(args) > 0)
             else:
                 headers = {'Content-type': 'application/json'}
                 data = {
-                    'requests': [self._get_hit_args(hit) for hit in hits]
+                    'requests': []
                 }
                 args = {}
+                for hit in hits:
+                    next_hit = self._get_hit_args(hit)
+                    if len(next_hit) > 0:
+                        data['requests'].append(next_hit)
+                        hit_count += 1
 
-            try:
-                if config.options.debug_tracker:
-                    args['debug'] = '1'
+            if hit_count > 0:
+                try:
+                    if config.options.debug_tracker:
+                        args['debug'] = '1'
 
-                response = piwik.call(
-                    config.options.piwik_tracker_endpoint_path, args=args,
-                    expected_content=None,
-                    headers=headers,
-                    data=data,
-                    on_failure=self._on_tracking_failure
-                )
+                    response = piwik.call(
+                        config.options.piwik_tracker_endpoint_path, args=args,
+                        expected_content=None,
+                        headers=headers,
+                        data=data,
+                        on_failure=self._on_tracking_failure
+                    )
 
-                if config.options.debug_tracker:
-                    logging.debug('tracker response:\n%s' % response)
+                    if config.options.debug_tracker:
+                        logging.debug('tracker response:\n%s' % response)
 
-            except PiwikHttpBase.Error as e:
-                # if the server returned 400 code, BulkTracking may not be enabled
-                if e.code == 400:
-                    fatal_error(
-                        "Server returned status 400 (Bad Request).\nIs the BulkTracking plugin disabled?",
-                        hits[0].filename, hits[0].lineno)
+                except PiwikHttpBase.Error as e:
+                    # if the server returned 400 code, BulkTracking may not be enabled
+                    if e.code == 400:
+                        fatal_error(
+                            "Server returned status 400 (Bad Request).\nIs the BulkTracking plugin disabled?",
+                            hits[0].filename, hits[0].lineno)
 
-                raise
+                    raise
 
-        stats.count_lines_recorded.advance(len(hits))
+        stats.count_lines_recorded.advance(hit_count)
 
     def _is_json(self, result):
         try:
