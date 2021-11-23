@@ -1535,7 +1535,7 @@ class StaticResolver:
                 site = piwik.auth_call_api('/api/apps/v2/%s' % site_id)
             except urllib.error.URLError as e:
                 if e.code == 404:
-                    # fatal_error("cannot get the main URL of this site ID: %s" % site_id)
+                    logging.debug("cannot get the main URL of this site ID: %s" % site_id)
                     self.site_id = None
             else:
                 if site.get('result') == 'error':
