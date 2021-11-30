@@ -1779,7 +1779,9 @@ class Recorder:
             url = (url_prefix if path.startswith('/') else '') + path[:1024]
 
             args['url'] = url
-            args['urlref'] = hit.referrer[:1024]
+            urlref = hit.referrer[:1024]
+            if len(urlref) > 0:
+                args['urlref'] = urlref
 
         # idsite is already determined by resolver
         if 'idsite' in hit.args:
@@ -1801,7 +1803,7 @@ class Recorder:
                 ("%sFrom = %s" % (
                     config.options.title_category_delimiter,
                     urllib.parse.quote(args['urlref'], '')
-                ) if args['urlref'] != ''  else '')
+                ) if 'urlref' in args else '')
             )
 
         if hit.generation_time_milli > 0:
