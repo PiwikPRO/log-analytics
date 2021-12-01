@@ -1565,7 +1565,7 @@ class DynamicResolver:
 
     def _get_site_id_from_hit_host(self, hit):
         try:
-            return piwik.auth_call_api('/api/tracker/v2/settings/app/url', args={'appUrl': hit.host})
+            return piwik.auth_call_api('/api/tracker/v2/settings/app/url', args={'app_url': hit.host})
         except urllib.error.URLError as e:
             if e.code == 404:
                 return None
