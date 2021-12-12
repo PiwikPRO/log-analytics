@@ -56,6 +56,12 @@ http.client._MAXHEADERS = 1000
 ## Constants.
 ##
 
+# import_logs.py version sent to CPP in tracking request
+TRACKING_CLIENT_VERSION = "2.1.0"
+
+# Name of tracking client sent to CPP in tracking request
+TRACKING_CLIENT_NAME = "wla"
+
 STATIC_EXTENSIONS = set((
     'gif jpg jpeg png bmp ico svg svgz ttf otf eot woff woff2 class swf css js xml webp'
 ).split())
@@ -1825,6 +1831,11 @@ class Recorder:
 
         if '_cvar' in args and not isinstance(args['_cvar'], str):
             args['_cvar'] = json.dumps(args['_cvar'])
+
+        # If web log analytics is enabled, sending tracking client name and version
+        if not config.options.replay_tracking:
+            args['ts_n'] = TRACKING_CLIENT_NAME
+            args['ts_v'] = TRACKING_CLIENT_VERSION
 
         return UrlHelper.convert_array_args(args)
 
