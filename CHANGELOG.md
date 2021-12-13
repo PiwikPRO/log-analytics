@@ -1,6 +1,12 @@
 # Changelog
 
-## Version 4.0.0
+## [Unreleased]
+
+## [4.1.0] - 2021-12-13
+
+- PPTT-3101 Source tracking
+
+## [4.0.0]
 
 - Process file globs in a sorted order (#291)
 - Use new performance metric for server generation time (#260)

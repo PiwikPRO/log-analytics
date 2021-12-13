@@ -57,7 +57,7 @@ http.client._MAXHEADERS = 1000
 ##
 
 # import_logs.py version sent to CPP in tracking request
-TRACKING_CLIENT_VERSION = "2.1.0"
+TRACKING_CLIENT_VERSION = "4.1.0"
 
 # Name of tracking client sent to CPP in tracking request
 TRACKING_CLIENT_NAME = "wla"
