@@ -1502,7 +1502,7 @@ class PiwikHttpUrllib(PiwikHttpBase):
         try:
             return func(*args, **kwargs)
         except urllib.error.URLError as e:
-            if e.code == 401:
+            if getattr(e, 'code') == 401:
                 config.init_token_auth()
                 return func(*args, **kwargs)
             else:
