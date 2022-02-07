@@ -754,7 +754,7 @@ class Configuration:
         parser.add_argument(
             '--enable-bulk-tracking', dest='use_bulk_tracking',
             default=False, action='store_true',
-            help="Disables use of bulk tracking so recorders record one hit at a time."
+            help="Enables use of bulk tracking so recorders record multiple events with one request to the tracker."
         )
         parser.add_argument(
             '--debug-force-one-hit-every-Ns', dest='force_one_action_interval', default=False, type=float,
