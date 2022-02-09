@@ -1849,8 +1849,8 @@ class Recorder:
         """
         Inserts several hits into Piwik.
         """
+        hit_count = 0
         if not config.options.dry_run:
-            hit_count = 0
             if single:
                 assert len(hits) == 1
                 headers = None

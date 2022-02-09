@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [4.1.1] - 2022-02-09
+
+- PPPSYS-28606 Fixing --dry-run
+
 ## [4.1.0] - 2021-12-13
 
 - PPTT-3101 Source tracking
