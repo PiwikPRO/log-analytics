@@ -526,6 +526,17 @@ class StoreDictKeyPair(argparse.Action):
             my_dict[k] = v
         setattr(namespace, self.dest, my_dict)
 
+class AddSlashAtStart(argparse.Action):
+    def __init__(self, option_strings, dest, nargs=None, **kwargs):
+        if nargs is not None:
+            raise ValueError("nargs not allowed at AddSlashAtStart action")
+        super().__init__(option_strings, dest, **kwargs)
+    def __call__(self, parser, namespace, values, option_string=None):
+        if not isinstance(values, str): 
+            raise ValueError("--tracker-endpoint-path must be a string")
+        setattr(namespace, self.dest, '/' + values if not values.startswith('/') else values)
+        
+
 class Configuration:
     """
     Stores all the configuration options by reading sys.argv and parsing,
@@ -592,8 +603,9 @@ class Configuration:
             "eg. https://other-example.com/piwik/ or https://analytics-api.example.net",
         )
         parser.add_argument(
-            '--tracker-endpoint-path', dest='piwik_tracker_endpoint_path', default='/piwik.php',
-            help="The tracker endpoint path to use when tracking. Defaults to /piwik.php."
+            '--tracker-endpoint-path', dest='piwik_tracker_endpoint_path', default='/piwik.php', action=AddSlashAtStart,
+            help="The tracker endpoint path to use to send requests to tracker. Defaults to /piwik.php."
+            "If you want to change tracker endpoint that should be detected in logs files use `--replay-tracking-expected-tracker-file`."
         )
         parser.add_argument(
             '--dry-run', dest='dry_run',
@@ -1879,7 +1891,8 @@ class Recorder:
                         args['debug'] = '1'
 
                     response = piwik.call(
-                        config.options.piwik_tracker_endpoint_path, args=args,
+                        config.options.piwik_tracker_endpoint_path, 
+                        args=args,
                         expected_content=None,
                         headers=headers,
                         data=data,
