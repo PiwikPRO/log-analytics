@@ -2,59 +2,56 @@
 # vim: et sw=4 ts=4:
 # -*- coding: utf-8 -*-
 #
-# Piwik - free/libre analytics platform
+# Piwik PRO - take control of your data
 #
-# @link https://piwik.org
+# @link https://piwik.pro/
 # @license https://www.gnu.org/licenses/gpl-3.0.html GPL v3 or later
 # @version $Id$
 #
-# For more info see: https://piwik.org/log-analytics/ and https://piwik.org/docs/log-analytics-tool-how-to/
+# For more info see: https://github.com/PiwikPRO/log-analytics/
 #
-# Requires Python 3.5+
-#
-from __future__ import print_function  # this is needed that python2 can run the script until the warning below
+# Requires Python 3.6+
 
 import sys
 
-if sys.version_info[0] != 3:
-    print('The log importer does not support Python 2 anymore.')
-    print('Please use Python 3.5+')
+if sys.version_info[0] != 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 6):
+    print('The log importer does not support older python versions.')
+    print('Please use Python 3.6+')
     sys.exit(1)
 
+import argparse
 import base64
 import bz2
+import collections
 import datetime
 import fnmatch
+import glob
 import gzip
 import http.client
 import inspect
 import itertools
 import json
 import logging
-import argparse
 import os
 import os.path
 import queue
 import re
+import socket
 import ssl
 import sys
+import textwrap
 import threading
 import time
-import urllib.request
+import traceback
 import urllib.error
 import urllib.parse
-import traceback
-import socket
-import textwrap
-import collections
-import glob
+import urllib.request
 
 # Avoid "got more than 100 headers" error
 http.client._MAXHEADERS = 1000
 
-##
-## Constants.
-##
+
+# Constants
 
 # import_logs.py version sent to CPP in tracking request
 TRACKING_CLIENT_VERSION = "4.1.0"
@@ -62,21 +59,21 @@ TRACKING_CLIENT_VERSION = "4.1.0"
 # Name of tracking client sent to CPP in tracking request
 TRACKING_CLIENT_NAME = "wla"
 
-STATIC_EXTENSIONS = set((
-    'gif jpg jpeg png bmp ico svg svgz ttf otf eot woff woff2 class swf css js xml webp'
-).split())
+STATIC_EXTENSIONS = set(
+    ('gif jpg jpeg png bmp ico svg svgz ttf otf eot woff woff2 class swf css js xml webp').split()
+)
 
-STATIC_FILES = set((
-    'robots.txt'
-).split())
+STATIC_FILES = set(('robots.txt').split())
 
-DOWNLOAD_EXTENSIONS = set((
-    '7z aac arc arj asf asx avi bin csv deb dmg doc docx exe flac flv gz gzip hqx '
-    'ibooks jar json mpg mp2 mp3 mp4 mpeg mov movie msi msp odb odf odg odp '
-    'ods odt ogg ogv pdf phps ppt pptx qt qtm ra ram rar rpm rtf sea sit tar tbz '
-    'bz2 tbz tgz torrent txt wav webm wma wmv wpd xls xlsx xml xsd z zip '
-    'azw3 epub mobi apk'
-).split())
+DOWNLOAD_EXTENSIONS = set(
+    (
+        '7z aac arc arj asf asx avi bin csv deb dmg doc docx exe flac flv gz gzip hqx '
+        'ibooks jar json mpg mp2 mp3 mp4 mpeg mov movie msi msp odb odf odg odp '
+        'ods odt ogg ogv pdf phps ppt pptx qt qtm ra ram rar rpm rtf sea sit tar tbz '
+        'bz2 tbz tgz torrent txt wav webm wma wmv wpd xls xlsx xml xsd z zip '
+        'azw3 epub mobi apk'
+    ).split()
+)
 
 # A good source is: http://phpbb-bots.blogspot.com/
 # user agents must be lowercase
@@ -120,15 +117,16 @@ PIWIK_EXPECTED_IMAGE = base64.b64decode(
     'R0lGODlhAQABAIAAAAAAAAAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=='
 )
 
-##
-## Formats.
-##
+#  Formats
 
 
 def _get_site_id_and_url(site):
     return site['data']['id'], site['data']['attributes']['urls'][0]
 
-class BaseFormatException(Exception): pass
+
+class BaseFormatException(Exception):
+    pass
+
 
 class BaseFormat:
     def __init__(self, name):
@@ -148,6 +146,7 @@ class BaseFormat:
     def check_format_line(self, line):
         return False
 
+
 class JsonFormat(BaseFormat):
     def __init__(self, name):
         super(JsonFormat, self).__init__(name)
@@ -158,26 +157,27 @@ class JsonFormat(BaseFormat):
         try:
             self.json = json.loads(line)
             return True
-        except:
+        except Exception:
             return False
 
     def match(self, line):
         try:
-            # nginx outputs malformed JSON w/ hex escapes when confronted w/ non-UTF input. we have to
-            # workaround this by converting hex escapes in strings to unicode escapes. the conversion is naive,
-            # so it does not take into account the string's actual encoding (which we don't have access to).
+            # nginx outputs malformed JSON w/ hex escapes when confronted w/ non-UTF input.
+            # We have to workaround this by converting hex escapes in strings to unicode escapes.
+            # The conversion is naive, so it does not take into account the string's actual
+            # encoding (which we don't have access to).
             line = line.replace('\\x', '\\u00')
 
             self.json = json.loads(line)
             return self
-        except:
+        except Exception:
             self.json = None
             return None
 
     def get(self, key):
         # Some ugly patchs ...
         if key == 'generation_time_milli':
-            self.json[key] =  int(float(self.json[key]) * 1000)
+            self.json[key] = int(float(self.json[key]) * 1000)
         # Patch date format ISO 8601
         elif key == 'date':
             tz = self.json[key][19:]
@@ -189,15 +189,17 @@ class JsonFormat(BaseFormat):
         except KeyError:
             raise BaseFormatException()
 
-    def get_all(self,):
+    def get_all(
+        self,
+    ):
         return self.json
 
     def remove_ignored_groups(self, groups):
         for group in groups:
             del self.json[group]
 
-class RegexFormat(BaseFormat):
 
+class RegexFormat(BaseFormat):
     def __init__(self, name, regex, date_format=None):
         super(RegexFormat, self).__init__(name)
         if regex is not None:
@@ -209,7 +211,7 @@ class RegexFormat(BaseFormat):
     def check_format_line(self, line):
         return self.match(line)
 
-    def match(self,line):
+    def match(self, line):
         if not self.regex:
             return None
         match_result = self.regex.match(line)
@@ -228,12 +230,15 @@ class RegexFormat(BaseFormat):
         except KeyError:
             raise BaseFormatException("Cannot find group '%s'." % key)
 
-    def get_all(self,):
+    def get_all(
+        self,
+    ):
         return self.matched
 
     def remove_ignored_groups(self, groups):
         for group in groups:
             del self.matched[group]
+
 
 class W3cExtendedFormat(RegexFormat):
 
@@ -253,7 +258,7 @@ class W3cExtendedFormat(RegexFormat):
         'cs-host': r'(?P<host>\S+)',
         'cs-method': r'(?P<method>\S+)',
         'cs-username': r'(?P<userid>\S+)',
-        'time-taken': r'(?P<generation_time_secs>[.\d]+)'
+        'time-taken': r'(?P<generation_time_secs>[.\d]+)',
     }
 
     def __init__(self):
@@ -316,9 +321,12 @@ class W3cExtendedFormat(RegexFormat):
         # Parse the 'Fields: ' line to create the regex to use
         full_regex = []
 
-        expected_fields = type(self).fields.copy() # turn custom field mapping into field => regex mapping
+        expected_fields = type(
+            self
+        ).fields.copy()  # turn custom field mapping into field => regex mapping
 
-        # if the --w3c-time-taken-millisecs option is used, make sure the time-taken field is interpreted as milliseconds
+        # if the --w3c-time-taken-millisecs option is used, make sure the time-taken field is
+        # interpreted as milliseconds
         if config.options.w3c_time_taken_in_millisecs:
             expected_fields['time-taken'] = r'(?P<generation_time_milli>[\d.]+)'
 
@@ -345,32 +353,53 @@ class W3cExtendedFormat(RegexFormat):
         self.regex = re.compile(full_regex)
 
     def check_for_iis_option(self):
-        if not config.options.w3c_time_taken_in_millisecs and self._is_time_taken_milli() and self._is_iis():
-            logging.info("WARNING: IIS log file being parsed without --w3c-time-taken-milli option. IIS"
-                         " stores millisecond values in the time-taken field. If your logfile does this, the aforementioned"
-                         " option must be used in order to get accurate generation times.")
+        if (
+            not config.options.w3c_time_taken_in_millisecs
+            and self._is_time_taken_milli()
+            and self._is_iis()
+        ):
+            logging.info(
+                "WARNING: IIS log file being parsed without --w3c-time-taken-milli option. IIS"
+                " stores millisecond values in the time-taken field. If your logfile does this, the"
+                " aforementioned option must be used in order to get accurate generation times."
+            )
 
     def _is_iis(self):
-        return len([line for line in self.header_lines if 'internet information services' in line.lower() or 'iis' in line.lower()]) > 0
+        return (
+            len(
+                [
+                    line
+                    for line in self.header_lines
+                    if 'internet information services' in line.lower() or 'iis' in line.lower()
+                ]
+            )
+            > 0
+        )
 
     def _is_time_taken_milli(self):
         return 'generation_time_milli' not in self.regex.pattern
 
+
 class IisFormat(W3cExtendedFormat):
 
     fields = W3cExtendedFormat.fields.copy()
-    fields.update({
-        'time-taken': r'(?P<generation_time_milli>[.\d]+)',
-        'sc-win32-status': r'(?P<__win32_status>\S+)' # this group is useless for log importing, but capturing it
-                                                     # will ensure we always select IIS for the format instead of
-                                                     # W3C logs when detecting the format. This way there will be
-                                                     # less accidental importing of IIS logs w/o --w3c-time-taken-milli.
-    })
+    fields.update(
+        {
+            'time-taken': r'(?P<generation_time_milli>[.\d]+)',
+            'sc-win32-status': (  # this group is useless for log importing, but capturing it
+                r'(?P<__win32_status>\S+)'
+            )
+            # will ensure we always select IIS for the format instead of
+            # W3C logs when detecting the format. This way there will be
+            # less accidental importing of IIS logs w/o --w3c-time-taken-milli.
+        }
+    )
 
     def __init__(self):
         super(IisFormat, self).__init__()
 
         self.name = 'iis'
+
 
 class IncapsulaW3CFormat(W3cExtendedFormat):
 
@@ -379,15 +408,17 @@ class IncapsulaW3CFormat(W3cExtendedFormat):
 
     fields = W3cExtendedFormat.fields.copy()
     # redefines all fields as they are always encapsulated with "
-    fields.update({
-        'cs-uri': r'"(?P<host>[^\/\s]+)(?P<path>\S+)"',
-        'cs-uri-query': r'"(?P<query_string>\S*)"',
-        'c-ip': r'"(?P<ip>[\w*.:-]*)"',
-        'cs(User-Agent)': r'"(?P<user_agent>.*?)"',
-        'cs(Referer)': r'"(?P<referrer>\S+)"',
-        'sc-status': r'(?P<status>"\d*")',
-        'cs-bytes': r'(?P<length>"\d*")',
-    })
+    fields.update(
+        {
+            'cs-uri': r'"(?P<host>[^\/\s]+)(?P<path>\S+)"',
+            'cs-uri-query': r'"(?P<query_string>\S*)"',
+            'c-ip': r'"(?P<ip>[\w*.:-]*)"',
+            'cs(User-Agent)': r'"(?P<user_agent>.*?)"',
+            'cs(Referer)': r'"(?P<referrer>\S+)"',
+            'sc-status': r'(?P<status>"\d*")',
+            'cs-bytes': r'(?P<length>"\d*")',
+        }
+    )
 
     def __init__(self):
         super(IncapsulaW3CFormat, self).__init__()
@@ -402,13 +433,13 @@ class IncapsulaW3CFormat(W3cExtendedFormat):
             value = '200'
         return value
 
+
 class ShoutcastFormat(W3cExtendedFormat):
 
     fields = W3cExtendedFormat.fields.copy()
-    fields.update({
-        'c-status': r'(?P<status>\d+)',
-        'x-duration': r'(?P<generation_time_secs>[.\d]+)'
-    })
+    fields.update(
+        {'c-status': r'(?P<status>\d+)', 'x-duration': r'(?P<generation_time_secs>[.\d]+)'}
+    )
 
     def __init__(self):
         super(ShoutcastFormat, self).__init__()
@@ -422,21 +453,23 @@ class ShoutcastFormat(W3cExtendedFormat):
         else:
             return super(ShoutcastFormat, self).get(key)
 
+
 class AmazonCloudFrontFormat(W3cExtendedFormat):
 
     fields = W3cExtendedFormat.fields.copy()
-    fields.update({
-        'x-event': r'(?P<event_action>\S+)',
-        'x-sname': r'(?P<event_name>\S+)',
-        'cs-uri-stem': r'(?:rtmp:/)?(?P<path>/\S*)',
-        'c-user-agent': r'(?P<user_agent>".*?"|\S+)',
-
-        # following are present to match cloudfront instead of W3C when we know it's cloudfront
-        'x-edge-location': r'(?P<x_edge_location>".*?"|\S+)',
-        'x-edge-result-type': r'(?P<x_edge_result_type>".*?"|\S+)',
-        'x-edge-request-id': r'(?P<x_edge_request_id>".*?"|\S+)',
-        'x-host-header': r'(?P<host>".*?"|\S+)'
-    })
+    fields.update(
+        {
+            'x-event': r'(?P<event_action>\S+)',
+            'x-sname': r'(?P<event_name>\S+)',
+            'cs-uri-stem': r'(?:rtmp:/)?(?P<path>/\S*)',
+            'c-user-agent': r'(?P<user_agent>".*?"|\S+)',
+            # following are present to match cloudfront instead of W3C when we know it's cloudfront
+            'x-edge-location': r'(?P<x_edge_location>".*?"|\S+)',
+            'x-edge-result-type': r'(?P<x_edge_result_type>".*?"|\S+)',
+            'x-edge-request-id': r'(?P<x_edge_request_id>".*?"|\S+)',
+            'x-host-header': r'(?P<host>".*?"|\S+)',
+        }
+    )
 
     def __init__(self):
         super(AmazonCloudFrontFormat, self).__init__()
@@ -454,29 +487,29 @@ class AmazonCloudFrontFormat(W3cExtendedFormat):
         else:
             return super(AmazonCloudFrontFormat, self).get(key)
 
+
 _HOST_PREFIX = r'(?P<host>[\w\-\.]*)(?::\d+)?\s+'
 
 _COMMON_LOG_FORMAT = (
     r'(?P<ip>[\w*.:-]+)\s+\S+\s+(?P<userid>\S+)\s+\[(?P<date>.*?)\s+(?P<timezone>.*?)\]\s+'
     r'"(?P<method>\S+)\s+(?P<path>.*?)\s+\S+"\s+(?P<status>\d+)\s+(?P<length>\S+)'
 )
-_NCSA_EXTENDED_LOG_FORMAT = (_COMMON_LOG_FORMAT +
-    r'\s+"(?P<referrer>.*?)"\s+"(?P<user_agent>.*?)"'
-)
+_NCSA_EXTENDED_LOG_FORMAT = _COMMON_LOG_FORMAT + r'\s+"(?P<referrer>.*?)"\s+"(?P<user_agent>.*?)"'
 
 
 _S3_LOG_FORMAT = (
     r'\S+\s+(?P<host>\S+)\s+\[(?P<date>.*?)\s+(?P<timezone>.*?)\]\s+(?P<ip>[\w*.:-]+)\s+'
-    r'(?P<userid>\S+)\s+\S+\s+\S+\s+\S+\s+"(?P<method>\S+)\s+(?P<path>.*?)\s+\S+"\s+(?P<status>\d+)\s+\S+\s+(?P<length>\S+)\s+'
+    r'(?P<userid>\S+)\s+\S+\s+\S+\s+\S+\s+"(?P<method>\S+)\s+(?P<path>.*?)\s+\S+"\s+(?P<status>\d+)'
+    r'\s+\S+\s+(?P<length>\S+)\s+'
     r'\S+\s+\S+\s+\S+\s+"(?P<referrer>.*?)"\s+"(?P<user_agent>.*?)"'
 )
-_ICECAST2_LOG_FORMAT = ( _NCSA_EXTENDED_LOG_FORMAT +
-    r'\s+(?P<session_time>[0-9-]+)'
-)
+_ICECAST2_LOG_FORMAT = _NCSA_EXTENDED_LOG_FORMAT + r'\s+(?P<session_time>[0-9-]+)'
 _ELB_LOG_FORMAT = (
-    r'(?:\S+\s+)?(?P<date>[0-9-]+T[0-9:]+)\.\S+\s+\S+\s+(?P<ip>[\w*.:-]+):\d+\s+\S+:\d+\s+\S+\s+(?P<generation_time_secs>\S+)\s+\S+\s+'
+    r'(?:\S+\s+)?(?P<date>[0-9-]+T[0-9:]+)\.\S+\s+\S+\s+(?P<ip>[\w*.:-]+):\d+\s+\S+:\d+\s+\S+\s+'
+    r'(?P<generation_time_secs>\S+)\s+\S+\s+'
     r'(?P<status>\d+)\s+\S+\s+\S+\s+(?P<length>\S+)\s+'
-    r'"\S+\s+\w+:\/\/(?P<host>[\w\-\.]*):\d+(?P<path>\/\S*)\s+[^"]+"\s+"(?P<user_agent>[^"]+)"\s+\S+\s+\S+'
+    r'"\S+\s+\w+:\/\/(?P<host>[\w\-\.]*):\d+(?P<path>\/\S*)\s+[^"]+"\s+"'
+    r'(?P<user_agent>[^"]+)"\s+\S+\s+\S+'
 )
 
 _OVH_FORMAT = (
@@ -486,13 +519,16 @@ _OVH_FORMAT = (
 )
 
 _HAPROXY_FORMAT = (
-    r'.*:\ (?P<ip>[\w*.]+).*\[(?P<date>.*)\].*\ (?P<status>\b\d{3}\b)\ (?P<length>\d+)\ -.*\"(?P<method>\S+)\ (?P<path>\S+).*'
+    r'.*:\ (?P<ip>[\w*.]+).*\[(?P<date>.*)\].*\ (?P<status>\b\d{3}\b)\ '
+    r'(?P<length>\d+)\ -.*\"(?P<method>\S+)\ (?P<path>\S+).*'
 )
 
 _GANDI_SIMPLE_HOSTING_FORMAT = (
-    r'(?P<host>[0-9a-zA-Z-_.]+)\s+(?P<ip>[a-zA-Z0-9.]+)\s+\S+\s+(?P<userid>\S+)\s+\[(?P<date>.+?)\s+(?P<timezone>.+?)\]\s+\((?P<generation_time_secs>[0-9a-zA-Z\s]*)\)\s+"(?P<method>[A-Z]+)\s+(?P<path>\S+)\s+(\S+)"\s+(?P<status>[0-9]+)\s+(?P<length>\S+)\s+"(?P<referrer>\S+)"\s+"(?P<user_agent>[^"]+)"'
+    r'(?P<host>[0-9a-zA-Z-_.]+)\s+(?P<ip>[a-zA-Z0-9.]+)\s+\S+\s+(?P<userid>\S+)'
+    r'\s+\[(?P<date>.+?)\s+(?P<timezone>.+?)\]\s+\((?P<generation_time_secs>[0-9a-zA-Z\s]*)\)\s+"'
+    r'(?P<method>[A-Z]+)\s+(?P<path>\S+)\s+(\S+)"\s+(?P<status>[0-9]+)\s+(?P<length>\S+)\s+"'
+    r'(?P<referrer>\S+)"\s+"(?P<user_agent>[^"]+)"'
 )
-
 FORMATS = {
     'common': RegexFormat('common', _COMMON_LOG_FORMAT),
     'common_vhost': RegexFormat('common_vhost', _HOST_PREFIX + _COMMON_LOG_FORMAT),
@@ -509,12 +545,12 @@ FORMATS = {
     'nginx_json': JsonFormat('nginx_json'),
     'ovh': RegexFormat('ovh', _OVH_FORMAT),
     'haproxy': RegexFormat('haproxy', _HAPROXY_FORMAT, '%d/%b/%Y:%H:%M:%S.%f'),
-    'gandi': RegexFormat('gandi', _GANDI_SIMPLE_HOSTING_FORMAT, '%d/%b/%Y:%H:%M:%S')
+    'gandi': RegexFormat('gandi', _GANDI_SIMPLE_HOSTING_FORMAT, '%d/%b/%Y:%H:%M:%S'),
 }
 
-##
-## Code.
-##
+
+# Code
+
 
 class StoreDictKeyPair(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
@@ -522,20 +558,22 @@ class StoreDictKeyPair(argparse.Action):
         if not my_dict:
             my_dict = {}
         for kv in values.split(","):
-            k,v = kv.split("=")
+            k, v = kv.split("=")
             my_dict[k] = v
         setattr(namespace, self.dest, my_dict)
+
 
 class AddSlashAtStart(argparse.Action):
     def __init__(self, option_strings, dest, nargs=None, **kwargs):
         if nargs is not None:
             raise ValueError("nargs not allowed at AddSlashAtStart action")
         super().__init__(option_strings, dest, **kwargs)
+
     def __call__(self, parser, namespace, values, option_string=None):
-        if not isinstance(values, str): 
+        if not isinstance(values, str):
             raise ValueError("--tracker-endpoint-path must be a string")
         setattr(namespace, self.dest, '/' + values if not values.startswith('/') else values)
-        
+
 
 class Configuration:
     """
@@ -556,349 +594,625 @@ class Configuration:
         """
         parser = argparse.ArgumentParser(
             # usage='Usage: %prog [options] log_file [ log_file [...] ]',
-            description="Import HTTP access logs to Piwik. "
-                         "log_file is the path to a server access log file (uncompressed, .gz, .bz2, or specify - to read from stdin). "
-                         " You may also import many log files at once (for example set log_file to *.log or *.log.gz)."
-                         " By default, the script will try to produce clean reports and will exclude bots, static files, discard http error and redirects, etc. This is customizable, see below.",
-            epilog="About Piwik Server Log Analytics: http://piwik.org/log-analytics/ "
-                   "              Found a bug? Please create a ticket in http://dev.piwik.org/ "
-                   "              Please send your suggestions or successful user story to hello@piwik.org "
+            description=(
+                "Import HTTP access logs to Piwik. log_file is the path to a server access log file"
+                " (uncompressed, .gz, .bz2, or specify - to read from stdin).  You may also import"
+                " many log files at once (for example set log_file to *.log or *.log.gz). By"
+                " default, the script will try to produce clean reports and will exclude bots,"
+                " static files, discard http error and redirects, etc. This is customizable, see"
+                " below."
+            ),
+            epilog=(
+                "About Piwik Server Log Analytics: http://piwik.org/log-analytics/              "
+                " Found a bug? Please create a ticket in http://dev.piwik.org/               Please"
+                " send your suggestions or successful user story to hello@piwik.org "
+            ),
         )
 
         parser.add_argument('file', type=str, nargs='+')
 
         # Basic auth user
         parser.add_argument(
-            '--auth-user', dest='auth_user',
+            '--auth-user',
+            dest='auth_user',
             help="Basic auth user",
         )
         # Basic auth password
         parser.add_argument(
-            '--auth-password', dest='auth_password',
+            '--auth-password',
+            dest='auth_password',
             help="Basic auth password",
         )
         parser.add_argument(
-            '--debug', '-d', dest='debug', action='count', default=0,
+            '--debug',
+            '-d',
+            dest='debug',
+            action='count',
+            default=0,
             help="Enable debug output (specify multiple times for more verbose)",
         )
         parser.add_argument(
-            '--debug-tracker', dest='debug_tracker', action='store_true', default=False,
-            help="Appends &debug=1 to tracker requests and prints out the result so the tracker can be debugged. If "
-            "using the log importer results in errors with the tracker or improperly recorded visits, this option can "
-            "be used to find out what the tracker is doing wrong. To see debug tracker output, you must also set the "
-            "[Tracker] debug_on_demand INI config to 1 in your Piwik's config.ini.php file."
+            '--debug-tracker',
+            dest='debug_tracker',
+            action='store_true',
+            default=False,
+            help=(
+                "Appends &debug=1 to tracker requests and prints out the result so the tracker can"
+                " be debugged. If using the log importer results in errors with the tracker or"
+                " improperly recorded visits, this option can be used to find out what the tracker"
+                " is doing wrong. To see debug tracker output, you must also set the [Tracker]"
+                " debug_on_demand INI config to 1 in your Piwik's config.ini.php file."
+            ),
         )
         parser.add_argument(
-            '--debug-request-limit', dest='debug_request_limit', type=int, default=None,
-            help="Debug option that will exit after N requests are parsed. Can be used w/ --debug-tracker to limit the "
-            "output of a large log file."
+            '--debug-request-limit',
+            dest='debug_request_limit',
+            type=int,
+            default=None,
+            help=(
+                "Debug option that will exit after N requests are parsed. Can be used w/"
+                " --debug-tracker to limit the output of a large log file."
+            ),
         )
         parser.add_argument(
-            '--url', dest='piwik_url', required=True,
-            help="REQUIRED Your Piwik server URL, eg. https://example.com/piwik/ or https://analytics.example.net",
+            '--url',
+            dest='piwik_url',
+            required=True,
+            help=(
+                "REQUIRED Your Piwik server URL, eg. https://example.com/piwik/ or"
+                " https://analytics.example.net"
+            ),
         )
         parser.add_argument(
-            '--api-url', dest='piwik_api_url',
-            help="This URL will be used to send API requests (use it if your tracker URL differs from UI/API url), "
-            "eg. https://other-example.com/piwik/ or https://analytics-api.example.net",
+            '--api-url',
+            dest='piwik_api_url',
+            help=(
+                "This URL will be used to send API requests (use it if your tracker URL differs"
+                " from UI/API url), eg. https://other-example.com/piwik/ or"
+                " https://analytics-api.example.net"
+            ),
         )
         parser.add_argument(
-            '--tracker-endpoint-path', dest='piwik_tracker_endpoint_path', default='/piwik.php', action=AddSlashAtStart,
-            help="The tracker endpoint path to use to send requests to tracker. Defaults to /piwik.php."
-            "If you want to change tracker endpoint that should be detected in logs files use `--replay-tracking-expected-tracker-file`."
+            '--tracker-endpoint-path',
+            dest='piwik_tracker_endpoint_path',
+            default='/piwik.php',
+            action=AddSlashAtStart,
+            help=(
+                "The tracker endpoint path to use to send requests to tracker. Defaults to"
+                " /piwik.php.If you want to change tracker endpoint that should be detected in logs"
+                " files use `--replay-tracking-expected-tracker-file`."
+            ),
         )
         parser.add_argument(
-            '--dry-run', dest='dry_run',
-            action='store_true', default=False,
+            '--dry-run',
+            dest='dry_run',
+            action='store_true',
+            default=False,
             help="Perform a trial run with no tracking data being inserted into Piwik",
         )
         parser.add_argument(
-            '--show-progress', dest='show_progress',
-            action='store_true', default=hasattr(sys.stdout, 'fileno') and os.isatty(sys.stdout.fileno()),
-            help="Print a progress report X seconds (default: 1, use --show-progress-delay to override)"
+            '--show-progress',
+            dest='show_progress',
+            action='store_true',
+            default=hasattr(sys.stdout, 'fileno') and os.isatty(sys.stdout.fileno()),
+            help=(
+                "Print a progress report X seconds (default: 1, use --show-progress-delay to"
+                " override)"
+            ),
         )
         parser.add_argument(
-            '--show-progress-delay', dest='show_progress_delay',
-            type=int, default=1,
-            help="Change the default progress delay"
+            '--show-progress-delay',
+            dest='show_progress_delay',
+            type=int,
+            default=1,
+            help="Change the default progress delay",
         )
         parser.add_argument(
-            '--idsite', dest='site_id',
-            help= ("When specified, "
-                   "data in the specified log files will be tracked for this Piwik site ID."
-                   " The script will not auto-detect the website based on the log line hostname (new websites will not be automatically created).")
+            '--idsite',
+            dest='site_id',
+            help=(
+                "When specified, data in the specified log files will be tracked for this Piwik"
+                " site ID. The script will not auto-detect the website based on the log line"
+                " hostname (new websites will not be automatically created)."
+            ),
         )
         parser.add_argument(
-            '--client-id', dest='client_id',
-            help="Client ID used when OAuth authentication is needed"
+            '--client-id',
+            dest='client_id',
+            help="Client ID used when OAuth authentication is needed",
         )
         parser.add_argument(
-            '--client-secret', dest='client_secret',
-            help="Client secret used when OAuth authentication is needed"
-        )
-
-        parser.add_argument(
-            '--hostname', dest='hostnames', action='append', default=[],
-            help="Accepted hostname (requests with other hostnames will be excluded). "
-            " You may use the star character * "
-            " Example: --hostname=*domain.com"
-            " Can be specified multiple times"
-        )
-        parser.add_argument(
-            '--exclude-path', dest='excluded_paths', action='append', default=[],
-            help="Any URL path matching this exclude-path will not be imported in Piwik. "
-            " You must use the star character *. "
-            " Example: --exclude-path=*/admin/*"
-            " Can be specified multiple times. "
-        )
-        parser.add_argument(
-            '--exclude-path-from', dest='exclude_path_from',
-            help="Each line from this file is a path to exclude. Each path must contain the character * to match a string. (see: --exclude-path)"
-        )
-        parser.add_argument(
-            '--include-path', dest='included_paths', action='append', default=[],
-            help="Paths to include. Can be specified multiple times. If not specified, all paths are included."
-        )
-        parser.add_argument(
-            '--include-path-from', dest='include_path_from',
-            help="Each line from this file is a path to include"
-        )
-        parser.add_argument(
-            '--useragent-exclude', dest='excluded_useragents',
-            action='append', default=[],
-            help="User agents to exclude (in addition to the standard excluded "
-            "user agents). Can be specified multiple times",
-        )
-        parser.add_argument(
-            '--enable-static', dest='enable_static',
-            action='store_true', default=False,
-            help="Track static files (images, css, js, ico, ttf, etc.)"
-        )
-        parser.add_argument(
-            '--enable-bots', dest='enable_bots',
-            action='store_true', default=False,
-            help="Track bots. All bot visits will have a Custom Variable set with name='Bot' and value='$Bot_user_agent_here$'"
-        )
-        parser.add_argument(
-            '--enable-http-errors', dest='enable_http_errors',
-            action='store_true', default=False,
-            help="Track HTTP errors (status code 4xx or 5xx)"
-        )
-        parser.add_argument(
-            '--enable-http-redirects', dest='enable_http_redirects',
-            action='store_true', default=False,
-            help="Track HTTP redirects (status code 3xx except 304)"
-        )
-        parser.add_argument(
-            '--enable-reverse-dns', dest='reverse_dns',
-            action='store_true', default=False,
-            help="Enable reverse DNS, used to generate the 'Providers' report in Piwik. "
-                 "Disabled by default, as it impacts performance"
-        )
-        parser.add_argument(
-            '--strip-query-string', dest='strip_query_string',
-            action='store_true', default=False,
-            help="Strip the query string from the URL"
-        )
-        parser.add_argument(
-            '--query-string-delimiter', dest='query_string_delimiter', default='?',
-            help="The query string delimiter (default: %(default)s)"
-        )
-        parser.add_argument(
-            '--log-format-name', dest='log_format_name', default=None,
-            help=("Access log format to detect (supported are: %s). "
-                  "When not specified, the log format will be autodetected by trying all supported log formats."
-                  % ', '.join(sorted(FORMATS.keys())))
-        )
-        available_regex_groups = ['date', 'path', 'query_string', 'ip', 'user_agent', 'referrer', 'status',
-                                  'length', 'host', 'userid', 'generation_time_milli', 'event_action',
-                                  'event_name', 'timezone', 'session_time']
-        parser.add_argument(
-            '--log-format-regex', dest='log_format_regex', default=None,
-            help="Regular expression used to parse log entries. Regexes must contain named groups for different log fields. "
-                 "Recognized fields include: %s. For an example of a supported Regex, see the source code of this file. "
-                 "Overrides --log-format-name." % (', '.join(available_regex_groups))
-        )
-        parser.add_argument(
-            '--log-date-format', dest='log_date_format', default=None,
-            help="Format string used to parse dates. You can specify any format that can also be specified to "
-                 "the strptime python function."
-        )
-        parser.add_argument(
-            '--log-hostname', dest='log_hostname', default=None,
-            help="Force this hostname for a log format that doesn't include it. All hits "
-            "will seem to come to this host"
-        )
-        parser.add_argument(
-            '--skip', dest='skip', default=0, type=int,
-            help="Skip the n first lines to start parsing/importing data at a given line for the specified log file",
-        )
-        parser.add_argument(
-            '--recorders', dest='recorders', default=1, type=int,
-            help="Number of simultaneous recorders (default: %(default)s). "
-            "It should be set to the number of CPU cores in your server. "
-            "You can also experiment with higher values which may increase performance until a certain point",
-        )
-        parser.add_argument(
-            '--recorder-max-payload-size', dest='recorder_max_payload_size', default=200, type=int,
-            help="Maximum number of log entries to record in one tracking request (default: %(default)s). "
-        )
-        parser.add_argument(
-            '--replay-tracking', dest='replay_tracking',
-            action='store_true', default=False,
-            help="Replay requests to the Tracker found in custom logs (only piwik.php, ppms.php, js/ or js/tracker.php"
-                 " requests expected, but it can be configured with --replay-tracking-expected-tracker-file option)."
-        )
-        parser.add_argument(
-            '--replay-tracking-expected-tracker-file', dest='replay_tracking_expected_tracker_file', default=None,
-            help="The expected suffix for tracking request paths. Only logs whose paths end with this will be imported."
-                 " Defaults to 'piwik.php', 'ppms.php', 'js/' or 'js/tracker.php' so only requests to those files will"
-                 " be imported."
-        )
-        parser.add_argument(
-            '--output', dest='output',
-            help="Redirect output (stdout and stderr) to the specified file"
-        )
-        parser.add_argument(
-            '--encoding', dest='encoding', default='utf8',
-            help="Log files encoding (default: %(default)s)"
-        )
-        parser.add_argument(
-            '--enable-bulk-tracking', dest='use_bulk_tracking',
-            default=False, action='store_true',
-            help="Enables use of bulk tracking so recorders record multiple events with one request to the tracker."
-        )
-        parser.add_argument(
-            '--debug-force-one-hit-every-Ns', dest='force_one_action_interval', default=False, type=float,
-            help="Debug option that will force each recorder to record one hit every N secs."
-        )
-        parser.add_argument(
-            '--force-lowercase-path', dest='force_lowercase_path', default=False, action='store_true',
-            help="Make URL path lowercase so paths with the same letters but different cases are "
-                 "treated the same."
-        )
-        parser.add_argument(
-            '--download-extensions', dest='download_extensions', default=None,
-            help="By default Piwik tracks as Downloads the most popular file extensions. If you set this parameter (format: pdf,doc,...) then files with an extension found in the list will be imported as Downloads, other file extensions downloads will be skipped."
-        )
-        parser.add_argument(
-            '--add-download-extensions', dest='extra_download_extensions', default=None,
-            help="Add extensions that should be treated as downloads. See --download-extensions for more info."
-        )
-        parser.add_argument(
-            '--w3c-map-field', action=StoreDictKeyPair, metavar='KEY=VAL', default={}, dest="custom_w3c_fields",
-            help="Map a custom log entry field in your W3C log to a default one. Use this option to load custom log "
-                 "files that use the W3C extended log format such as those from the Advanced Logging W3C module. Used "
-                 "as, eg, --w3c-map-field my-date=date. Recognized default fields include: %s\n\n"
-                 "Formats that extend the W3C extended log format (like the cloudfront RTMP log format) may define more "
-                 "fields that can be mapped."
-                     % (', '.join(list(W3cExtendedFormat.fields.keys())))
-        )
-        parser.add_argument(
-            '--w3c-time-taken-millisecs', action='store_true', default=False, dest='w3c_time_taken_in_millisecs',
-            help="If set, interprets the time-taken W3C log field as a number of milliseconds. This must be set for importing"
-                 " IIS logs."
-        )
-        parser.add_argument(
-            '--w3c-fields', dest='w3c_fields', default=None,
-            help="Specify the '#Fields:' line for a log file in the W3C Extended log file format. Use this option if "
-                 "your log file doesn't contain the '#Fields:' line which is required for parsing. This option must be used "
-                 "in conjunction with --log-format-name=w3c_extended.\n"
-                 "Example: --w3c-fields='#Fields: date time c-ip ...'"
-        )
-        parser.add_argument(
-            '--w3c-field-regex', action=StoreDictKeyPair, metavar='KEY=VAL', default={}, dest="w3c_field_regexes", type=str,
-            help="Specify a regex for a field in your W3C extended log file. You can use this option to parse fields the "
-                 "importer does not natively recognize and then use one of the --regex-group-to-XXX-cvar options to track "
-                 "the field in a custom variable. For example, specifying --w3c-field-regex=sc-win32-status=(?P<win32_status>\\S+) "
-                 "--regex-group-to-page-cvar=\"win32_status=Windows Status Code\" will track the sc-win32-status IIS field "
-                 "in the 'Windows Status Code' custom variable. Regexes must contain a named group."
-        )
-        parser.add_argument(
-            '--title-category-delimiter', dest='title_category_delimiter', default='/',
-            help="If --enable-http-errors is used, errors are shown in the page titles report. If you have "
-            "changed General.action_title_category_delimiter in your Piwik configuration, you need to set this "
-            "option to the same value in order to get a pretty page titles report."
-        )
-        parser.add_argument(
-            '--dump-log-regex', dest='dump_log_regex', action='store_true', default=False,
-            help="Prints out the regex string used to parse log lines and exists. Can be useful for using formats "
-                 "in newer versions of the script in older versions of the script. The output regex can be used with "
-                 "the --log-format-regex option."
+            '--client-secret',
+            dest='client_secret',
+            help="Client secret used when OAuth authentication is needed",
         )
 
         parser.add_argument(
-            '--ignore-groups', dest='regex_groups_to_ignore', default=None,
-            help="Comma separated list of regex groups to ignore when parsing log lines. Can be used to, for example, "
-                 "disable normal user id tracking. See documentation for --log-format-regex for list of available "
-                 "regex groups."
+            '--hostname',
+            dest='hostnames',
+            action='append',
+            default=[],
+            help=(
+                "Accepted hostname (requests with other hostnames will be excluded). "
+                " You may use the star character * "
+                " Example: --hostname=*domain.com"
+                " Can be specified multiple times"
+            ),
+        )
+        parser.add_argument(
+            '--exclude-path',
+            dest='excluded_paths',
+            action='append',
+            default=[],
+            help=(
+                "Any URL path matching this exclude-path will not be imported in Piwik. "
+                " You must use the star character *. "
+                " Example: --exclude-path=*/admin/*"
+                " Can be specified multiple times. "
+            ),
+        )
+        parser.add_argument(
+            '--exclude-path-from',
+            dest='exclude_path_from',
+            help=(
+                "Each line from this file is a path to exclude. Each path must contain the"
+                " character * to match a string. (see: --exclude-path)"
+            ),
+        )
+        parser.add_argument(
+            '--include-path',
+            dest='included_paths',
+            action='append',
+            default=[],
+            help=(
+                "Paths to include. Can be specified multiple times. If not specified, all paths are"
+                " included."
+            ),
+        )
+        parser.add_argument(
+            '--include-path-from',
+            dest='include_path_from',
+            help="Each line from this file is a path to include",
+        )
+        parser.add_argument(
+            '--useragent-exclude',
+            dest='excluded_useragents',
+            action='append',
+            default=[],
+            help=(
+                "User agents to exclude (in addition to the standard excluded "
+                "user agents). Can be specified multiple times"
+            ),
+        )
+        parser.add_argument(
+            '--enable-static',
+            dest='enable_static',
+            action='store_true',
+            default=False,
+            help="Track static files (images, css, js, ico, ttf, etc.)",
+        )
+        parser.add_argument(
+            '--enable-bots',
+            dest='enable_bots',
+            action='store_true',
+            default=False,
+            help=(
+                "Track bots. All bot visits will have a Custom Variable set with name='Bot' and"
+                " value='$Bot_user_agent_here$'"
+            ),
+        )
+        parser.add_argument(
+            '--enable-http-errors',
+            dest='enable_http_errors',
+            action='store_true',
+            default=False,
+            help="Track HTTP errors (status code 4xx or 5xx)",
+        )
+        parser.add_argument(
+            '--enable-http-redirects',
+            dest='enable_http_redirects',
+            action='store_true',
+            default=False,
+            help="Track HTTP redirects (status code 3xx except 304)",
+        )
+        parser.add_argument(
+            '--enable-reverse-dns',
+            dest='reverse_dns',
+            action='store_true',
+            default=False,
+            help=(
+                "Enable reverse DNS, used to generate the 'Providers' report in Piwik. "
+                "Disabled by default, as it impacts performance"
+            ),
+        )
+        parser.add_argument(
+            '--strip-query-string',
+            dest='strip_query_string',
+            action='store_true',
+            default=False,
+            help="Strip the query string from the URL",
+        )
+        parser.add_argument(
+            '--query-string-delimiter',
+            dest='query_string_delimiter',
+            default='?',
+            help="The query string delimiter (default: %(default)s)",
+        )
+        parser.add_argument(
+            '--log-format-name',
+            dest='log_format_name',
+            default=None,
+            help=(
+                "Access log format to detect (supported are: %s). When not specified, the log"
+                " format will be autodetected by trying all supported log formats."
+                % ', '.join(sorted(FORMATS.keys()))
+            ),
+        )
+        available_regex_groups = [
+            'date',
+            'path',
+            'query_string',
+            'ip',
+            'user_agent',
+            'referrer',
+            'status',
+            'length',
+            'host',
+            'userid',
+            'generation_time_milli',
+            'event_action',
+            'event_name',
+            'timezone',
+            'session_time',
+        ]
+        parser.add_argument(
+            '--log-format-regex',
+            dest='log_format_regex',
+            default=None,
+            help=(
+                "Regular expression used to parse log entries. Regexes must contain named groups"
+                " for different log fields. Recognized fields include: %s. For an example of a"
+                " supported Regex, see the source code of this file. Overrides --log-format-name."
+            )
+            % ', '.join(available_regex_groups),
+        )
+        parser.add_argument(
+            '--log-date-format',
+            dest='log_date_format',
+            default=None,
+            help=(
+                "Format string used to parse dates. You can specify any format that can also be"
+                " specified to the strptime python function."
+            ),
+        )
+        parser.add_argument(
+            '--log-hostname',
+            dest='log_hostname',
+            default=None,
+            help=(
+                "Force this hostname for a log format that doesn't include it. All hits "
+                "will seem to come to this host"
+            ),
+        )
+        parser.add_argument(
+            '--skip',
+            dest='skip',
+            default=0,
+            type=int,
+            help=(
+                "Skip the n first lines to start parsing/importing data at a given line for the"
+                " specified log file"
+            ),
+        )
+        parser.add_argument(
+            '--recorders',
+            dest='recorders',
+            default=1,
+            type=int,
+            help=(
+                "Number of simultaneous recorders (default: %(default)s). It should be set to the"
+                " number of CPU cores in your server. You can also experiment with higher values"
+                " which may increase performance until a certain point"
+            ),
+        )
+        parser.add_argument(
+            '--recorder-max-payload-size',
+            dest='recorder_max_payload_size',
+            default=200,
+            type=int,
+            help=(
+                "Maximum number of log entries to record in one tracking request (default:"
+                " %(default)s). "
+            ),
+        )
+        parser.add_argument(
+            '--replay-tracking',
+            dest='replay_tracking',
+            action='store_true',
+            default=False,
+            help=(
+                "Replay requests to the Tracker found in custom logs (only piwik.php, ppms.php, js/"
+                " or js/tracker.php requests expected, but it can be configured with"
+                " --replay-tracking-expected-tracker-file option)."
+            ),
+        )
+        parser.add_argument(
+            '--replay-tracking-expected-tracker-file',
+            dest='replay_tracking_expected_tracker_file',
+            default=None,
+            help=(
+                "The expected suffix for tracking request paths. Only logs whose paths end with"
+                " this will be imported. Defaults to 'piwik.php', 'ppms.php', 'js/' or"
+                " 'js/tracker.php' so only requests to those files will be imported."
+            ),
+        )
+        parser.add_argument(
+            '--output',
+            dest='output',
+            help="Redirect output (stdout and stderr) to the specified file",
+        )
+        parser.add_argument(
+            '--encoding',
+            dest='encoding',
+            default='utf8',
+            help="Log files encoding (default: %(default)s)",
+        )
+        parser.add_argument(
+            '--enable-bulk-tracking',
+            dest='use_bulk_tracking',
+            default=False,
+            action='store_true',
+            help=(
+                "Enables use of bulk tracking so recorders record multiple events with one request"
+                " to the tracker."
+            ),
+        )
+        parser.add_argument(
+            '--debug-force-one-hit-every-Ns',
+            dest='force_one_action_interval',
+            default=False,
+            type=float,
+            help="Debug option that will force each recorder to record one hit every N secs.",
+        )
+        parser.add_argument(
+            '--force-lowercase-path',
+            dest='force_lowercase_path',
+            default=False,
+            action='store_true',
+            help=(
+                "Make URL path lowercase so paths with the same letters but different cases are "
+                "treated the same."
+            ),
+        )
+        parser.add_argument(
+            '--download-extensions',
+            dest='download_extensions',
+            default=None,
+            help=(
+                "By default Piwik tracks as Downloads the most popular file extensions. If you set"
+                " this parameter (format: pdf,doc,...) then files with an extension found in the"
+                " list will be imported as Downloads, other file extensions downloads will be"
+                " skipped."
+            ),
+        )
+        parser.add_argument(
+            '--add-download-extensions',
+            dest='extra_download_extensions',
+            default=None,
+            help=(
+                "Add extensions that should be treated as downloads. See --download-extensions for"
+                " more info."
+            ),
+        )
+        parser.add_argument(
+            '--w3c-map-field',
+            action=StoreDictKeyPair,
+            metavar='KEY=VAL',
+            default={},
+            dest="custom_w3c_fields",
+            help=(
+                "Map a custom log entry field in your W3C log to a default one. Use this option to"
+                " load custom log files that use the W3C extended log format such as those from the"
+                " Advanced Logging W3C module. Used as, eg, --w3c-map-field my-date=date."
+                " Recognized default fields include: %s\n\nFormats that extend the W3C extended log"
+                " format (like the cloudfront RTMP log format) may define more fields that can be"
+                " mapped."
+            )
+            % ', '.join(list(W3cExtendedFormat.fields.keys())),
+        )
+        parser.add_argument(
+            '--w3c-time-taken-millisecs',
+            action='store_true',
+            default=False,
+            dest='w3c_time_taken_in_millisecs',
+            help=(
+                "If set, interprets the time-taken W3C log field as a number of milliseconds. This"
+                " must be set for importing IIS logs."
+            ),
+        )
+        parser.add_argument(
+            '--w3c-fields',
+            dest='w3c_fields',
+            default=None,
+            help=(
+                "Specify the '#Fields:' line for a log file in the W3C Extended log file format."
+                " Use this option if your log file doesn't contain the '#Fields:' line which is"
+                " required for parsing. This option must be used in conjunction with"
+                " --log-format-name=w3c_extended.\nExample: --w3c-fields='#Fields: date time c-ip"
+                " ...'"
+            ),
+        )
+        parser.add_argument(
+            '--w3c-field-regex',
+            action=StoreDictKeyPair,
+            metavar='KEY=VAL',
+            default={},
+            dest="w3c_field_regexes",
+            type=str,
+            help=(
+                "Specify a regex for a field in your W3C extended log file. You can use this option"
+                " to parse fields the importer does not natively recognize and then use one of the"
+                " --regex-group-to-XXX-cvar options to track the field in a custom variable. For"
+                " example, specifying --w3c-field-regex=sc-win32-status=(?P<win32_status>\\S+)"
+                " --regex-group-to-page-cvar=\"win32_status=Windows Status Code\" will track the"
+                " sc-win32-status IIS field in the 'Windows Status Code' custom variable. Regexes"
+                " must contain a named group."
+            ),
+        )
+        parser.add_argument(
+            '--title-category-delimiter',
+            dest='title_category_delimiter',
+            default='/',
+            help=(
+                "If --enable-http-errors is used, errors are shown in the page titles report. If"
+                " you have changed General.action_title_category_delimiter in your Piwik"
+                " configuration, you need to set this option to the same value in order to get a"
+                " pretty page titles report."
+            ),
+        )
+        parser.add_argument(
+            '--dump-log-regex',
+            dest='dump_log_regex',
+            action='store_true',
+            default=False,
+            help=(
+                "Prints out the regex string used to parse log lines and exists. Can be useful for"
+                " using formats in newer versions of the script in older versions of the script."
+                " The output regex can be used with the --log-format-regex option."
+            ),
         )
 
         parser.add_argument(
-            '--regex-group-to-visit-cvar', action=StoreDictKeyPair, metavar='KEY=VAL',dest='regex_group_to_visit_cvars_map', default={},
-            help="Track an attribute through a custom variable with visit scope instead of through Piwik's normal "
-                 "approach. For example, to track usernames as a custom variable instead of through the uid tracking "
-                 "parameter, supply --regex-group-to-visit-cvar=\"userid=User Name\". This will track usernames in a "
-                 "custom variable named 'User Name'. The list of available regex groups can be found in the documentation "
-                 "for --log-format-regex (additional regex groups you may have defined "
-                 "in --log-format-regex can also be used)."
+            '--ignore-groups',
+            dest='regex_groups_to_ignore',
+            default=None,
+            help=(
+                "Comma separated list of regex groups to ignore when parsing log lines. Can be used"
+                " to, for example, disable normal user id tracking. See documentation for"
+                " --log-format-regex for list of available regex groups."
+            ),
+        )
+
+        parser.add_argument(
+            '--regex-group-to-visit-cvar',
+            action=StoreDictKeyPair,
+            metavar='KEY=VAL',
+            dest='regex_group_to_visit_cvars_map',
+            default={},
+            help=(
+                "Track an attribute through a custom variable with visit scope instead of through"
+                " Piwik's normal approach. For example, to track usernames as a custom variable"
+                " instead of through the uid tracking parameter, supply"
+                " --regex-group-to-visit-cvar=\"userid=User Name\". This will track usernames in a"
+                " custom variable named 'User Name'. The list of available regex groups can be"
+                " found in the documentation for --log-format-regex (additional regex groups you"
+                " may have defined in --log-format-regex can also be used)."
+            ),
         )
         parser.add_argument(
-            '--regex-group-to-page-cvar', action=StoreDictKeyPair, metavar='KEY=VAL', dest='regex_group_to_page_cvars_map', default={},
-            help="Track an attribute through a custom variable with page scope instead of through Piwik's normal "
-                 "approach. For example, to track usernames as a custom variable instead of through the uid tracking "
-                 "parameter, supply --regex-group-to-page-cvar=\"userid=User Name\". This will track usernames in a "
-                 "custom variable named 'User Name'. The list of available regex groups can be found in the documentation "
-                 "for --log-format-regex (additional regex groups you may have defined "
-                 "in --log-format-regex can also be used)."
+            '--regex-group-to-page-cvar',
+            action=StoreDictKeyPair,
+            metavar='KEY=VAL',
+            dest='regex_group_to_page_cvars_map',
+            default={},
+            help=(
+                "Track an attribute through a custom variable with page scope instead of through"
+                " Piwik's normal approach. For example, to track usernames as a custom variable"
+                " instead of through the uid tracking parameter, supply"
+                " --regex-group-to-page-cvar=\"userid=User Name\". This will track usernames in a"
+                " custom variable named 'User Name'. The list of available regex groups can be"
+                " found in the documentation for --log-format-regex (additional regex groups you"
+                " may have defined in --log-format-regex can also be used)."
+            ),
         )
         parser.add_argument(
-            '--track-http-method', dest='track_http_method', default=False,
-            help="Enables tracking of http method as custom page variable if method group is available in log format."
+            '--track-http-method',
+            dest='track_http_method',
+            default=False,
+            help=(
+                "Enables tracking of http method as custom page variable if method group is"
+                " available in log format."
+            ),
         )
         parser.add_argument(
-            '--retry-max-attempts', dest='max_attempts', default=PIWIK_DEFAULT_MAX_ATTEMPTS, type=int,
-            help="The maximum number of times to retry a failed tracking request."
+            '--retry-max-attempts',
+            dest='max_attempts',
+            default=PIWIK_DEFAULT_MAX_ATTEMPTS,
+            type=int,
+            help="The maximum number of times to retry a failed tracking request.",
         )
         parser.add_argument(
-            '--retry-delay', dest='delay_after_failure', default=PIWIK_DEFAULT_DELAY_AFTER_FAILURE, type=int,
-            help="The number of seconds to wait before retrying a failed tracking request."
+            '--retry-delay',
+            dest='delay_after_failure',
+            default=PIWIK_DEFAULT_DELAY_AFTER_FAILURE,
+            type=int,
+            help="The number of seconds to wait before retrying a failed tracking request.",
         )
         parser.add_argument(
-            '--request-timeout', dest='request_timeout', default=DEFAULT_SOCKET_TIMEOUT, type=int,
-            help="The maximum number of seconds to wait before terminating an HTTP request to Piwik."
+            '--request-timeout',
+            dest='request_timeout',
+            default=DEFAULT_SOCKET_TIMEOUT,
+            type=int,
+            help=(
+                "The maximum number of seconds to wait before terminating an HTTP request to Piwik."
+            ),
         )
         parser.add_argument(
-            '--include-host', action='append', type=str,
-            help="Only import logs from the specified host(s)."
+            '--include-host',
+            action='append',
+            type=str,
+            help="Only import logs from the specified host(s).",
         )
         parser.add_argument(
-            '--exclude-host', action='append', type=str,
-            help="Only import logs that are not from the specified host(s)."
+            '--exclude-host',
+            action='append',
+            type=str,
+            help="Only import logs that are not from the specified host(s).",
         )
         parser.add_argument(
-            '--exclude-older-than', type=self._valid_date, default=None,
-            help="Ignore logs older than the specified date. Exclusive. Date format must be YYYY-MM-DD hh:mm:ss +/-0000. The timezone offset is required."
+            '--exclude-older-than',
+            type=self._valid_date,
+            default=None,
+            help=(
+                "Ignore logs older than the specified date. Exclusive. Date format must be"
+                " YYYY-MM-DD hh:mm:ss +/-0000. The timezone offset is required."
+            ),
         )
         parser.add_argument(
-            '--exclude-newer-than', type=self._valid_date, default=None,
-            help="Ignore logs newer than the specified date. Exclusive. Date format must be YYYY-MM-DD hh:mm:ss +/-0000. The timezone offset is required."
+            '--exclude-newer-than',
+            type=self._valid_date,
+            default=None,
+            help=(
+                "Ignore logs newer than the specified date. Exclusive. Date format must be"
+                " YYYY-MM-DD hh:mm:ss +/-0000. The timezone offset is required."
+            ),
         )
         parser.add_argument(
-            '--add-to-date', dest='seconds_to_add_to_date', default=0, type=int,
-            help="A number of seconds to add to each date value in the log file."
+            '--add-to-date',
+            dest='seconds_to_add_to_date',
+            default=0,
+            type=int,
+            help="A number of seconds to add to each date value in the log file.",
         )
         parser.add_argument(
-            '--request-suffix', dest='request_suffix', default=None, type=str, help="Extra parameters to append to tracker and API requests."
+            '--request-suffix',
+            dest='request_suffix',
+            default=None,
+            type=str,
+            help="Extra parameters to append to tracker and API requests.",
         )
         parser.add_argument(
             '--accept-invalid-ssl-certificate',
-            dest='accept_invalid_ssl_certificate', action='store_true',
+            dest='accept_invalid_ssl_certificate',
+            action='store_true',
             default=False,
-            help="Do not verify the SSL / TLS certificate when contacting the Piwik server."
+            help="Do not verify the SSL / TLS certificate when contacting the Piwik server.",
         )
         parser.add_argument(
-            '--php-binary', dest='php_binary', type=str, default='php',
+            '--php-binary',
+            dest='php_binary',
+            type=str,
+            default='php',
             help="Specify the PHP binary to use.",
         )
         return parser
@@ -906,18 +1220,21 @@ class Configuration:
     def _valid_date(self, value):
         try:
             (date_str, timezone) = value.rsplit(' ', 1)
-        except:
+        except Exception:
             raise argparse.ArgumentTypeError("Invalid date value '%s'." % value)
 
         if not re.match('[-+][0-9]{4}', timezone):
-            raise argparse.ArgumentTypeError("Invalid date value '%s': expected valid timzeone like +0100 or -1200, got '%s'" % (value, timezone))
+            raise argparse.ArgumentTypeError(
+                "Invalid date value '%s': expected valid timzeone like +0100 or -1200, got '%s'"
+                % (value, timezone)
+            )
 
         date = datetime.datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
         date -= TimeHelper.timedelta_from_timezone(timezone)
 
         return date
 
-    def _parse_args(self, option_parser, argv = None):
+    def _parse_args(self, option_parser, argv=None):
         """
         Parse the command line args and create self.options and self.filenames.
         """
@@ -944,7 +1261,9 @@ class Configuration:
             level=logging.DEBUG if self.options.debug >= 1 else logging.INFO,
         )
 
-        self.options.excluded_useragents = set([s.lower() for s in self.options.excluded_useragents])
+        self.options.excluded_useragents = set(
+            [s.lower() for s in self.options.excluded_useragents]
+        )
 
         if self.options.exclude_path_from:
             paths = [path.strip() for path in open(self.options.exclude_path_from).readlines()]
@@ -966,7 +1285,9 @@ class Configuration:
             logging.debug('Accepted hostnames: all')
 
         if self.options.log_format_regex:
-            self.format = RegexFormat('custom', self.options.log_format_regex, self.options.log_date_format)
+            self.format = RegexFormat(
+                'custom', self.options.log_format_regex, self.options.log_date_format
+            )
         elif self.options.log_format_name:
             try:
                 self.format = FORMATS[self.options.log_format_name]
@@ -981,25 +1302,36 @@ class Configuration:
             # validate custom field mappings
             for dummy_custom_name, default_name in self.options.custom_w3c_fields.items():
                 if default_name not in type(format).fields:
-                    fatal_error("custom W3C field mapping error: don't know how to parse and use the '%s' field" % default_name)
+                    fatal_error(
+                        "custom W3C field mapping error: don't know how to parse and use the '%s'"
+                        " field" % default_name
+                    )
                     return
 
         if hasattr(self.options, 'w3c_field_regexes'):
             # make sure each custom w3c field regex has a named group
             for field_name, field_regex in self.options.w3c_field_regexes.items():
                 if '(?P<' not in field_regex:
-                    fatal_error("cannot find named group in custom w3c field regex '%s' for field '%s'" % (field_regex, field_name))
+                    fatal_error(
+                        "cannot find named group in custom w3c field regex '%s' for field '%s'"
+                        % (field_regex, field_name)
+                    )
                     return
 
-
-        if not (self.options.piwik_url.startswith('http://') or self.options.piwik_url.startswith('https://')):
+        if not (
+            self.options.piwik_url.startswith('http://')
+            or self.options.piwik_url.startswith('https://')
+        ):
             self.options.piwik_url = 'https://' + self.options.piwik_url
         logging.debug('Piwik Tracker API URL is: %s', self.options.piwik_url)
 
         if not self.options.piwik_api_url:
             self.options.piwik_api_url = self.options.piwik_url
 
-        if not (self.options.piwik_api_url.startswith('http://') or self.options.piwik_api_url.startswith('https://')):
+        if not (
+            self.options.piwik_api_url.startswith('http://')
+            or self.options.piwik_api_url.startswith('https://')
+        ):
             self.options.piwik_api_url = 'https://' + self.options.piwik_api_url
         logging.debug('Piwik Analytics API URL is: %s', self.options.piwik_api_url)
 
@@ -1015,9 +1347,11 @@ class Configuration:
         self.options.download_extensions = download_extensions
 
         if self.options.regex_groups_to_ignore:
-            self.options.regex_groups_to_ignore = set(self.options.regex_groups_to_ignore.split(','))
+            self.options.regex_groups_to_ignore = set(
+                self.options.regex_groups_to_ignore.split(',')
+            )
 
-    def __init__(self, argv = None):
+    def __init__(self, argv=None):
         self._parse_args(self._create_parser(), argv)
 
     def _get_token_auth(self):
@@ -1031,18 +1365,23 @@ class Configuration:
 
             logging.debug('Using credentials: (client_id = %s)', client_id)
             try:
-                api_result = piwik._call_api('/auth/token', data={
-                    "grant_type": "client_credentials",
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                })
+                api_result = piwik._call_api(
+                    '/auth/token',
+                    data={
+                        "grant_type": "client_credentials",
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                    },
+                )
             except urllib.error.URLError as e:
                 fatal_error('error when fetching OAuth token from the API: %s' % e)
 
             return api_result
         else:
             fatal_error(
-                'OAuth authentication failed. Make sure that --client-id and --client-secret options are provided.')
+                'OAuth authentication failed. Make sure that --client-id and --client-secret'
+                ' options are provided.'
+            )
 
     def get_resolver(self):
         if self.options.site_id:
@@ -1070,6 +1409,7 @@ class Statistics:
         Simple integers cannot be used by multithreaded programs. See:
         https://stackoverflow.com/questions/6320107/are-python-ints-thread-safe
         """
+
         def __init__(self):
             # itertools.count's implementation in C does not release the GIL and
             # therefore is thread-safe.
@@ -1090,8 +1430,8 @@ class Statistics:
         self.time_start = None
         self.time_stop = None
 
-        self.piwik_sites = set()                # sites ID
-        self.piwik_sites_ignored = set()        # hostname
+        self.piwik_sites = set()  # sites ID
+        self.piwik_sites_ignored = set()  # hostname
 
         self.count_lines_parsed = self.Counter()
         self.count_lines_recorded = self.Counter()
@@ -1151,10 +1491,7 @@ class Statistics:
         if isinstance(lines, str):
             return prefix + lines
         else:
-            return '\n'.join(
-                prefix + line
-                for line in lines
-            )
+            return '\n'.join(prefix + line for line in lines)
 
     def print_summary(self):
         invalid_lines_summary = ''
@@ -1162,13 +1499,17 @@ class Statistics:
             invalid_lines_summary = '''Invalid log lines
 -----------------
 
-The following lines were not tracked by Piwik, either due to a malformed tracker request or error in the tracker:
+The following lines were not tracked by Piwik, either due to a malformed tracker request
+or error in the tracker:
 
 %s
 
-''' % textwrap.fill(", ".join(self.invalid_lines), 80)
-
-        print(('''
+''' % textwrap.fill(
+                ", ".join(self.invalid_lines), 80
+            )
+        print(
+            (
+                '''
 %(invalid_lines)sLogs import summary
 -------------------
 
@@ -1183,7 +1524,7 @@ The following lines were not tracked by Piwik, either due to a malformed tracker
         %(count_lines_hostname_skipped)d requests did not match any --hostname
         %(count_lines_skipped_user_agent)d requests done by bots, search engines...
         %(count_lines_static)d requests to static resources (css, js, images, ico, ttf...)
-        %(count_lines_skipped_downloads)d requests to file downloads did not match any --download-extensions
+        %(count_lines_skipped_downloads)d requests to file downloads did not match any extension
 
 Website import summary
 ----------------------
@@ -1198,67 +1539,79 @@ Performance summary
 
     Total time: %(total_time)d seconds
     Requests imported per second: %(speed_recording)s requests per second
-''' % {
-
-    'count_lines_recorded': self.count_lines_recorded.value,
-    'count_lines_downloads': self.count_lines_downloads.value,
-    'total_lines_ignored': sum([
-            self.count_lines_invalid.value,
-            self.count_lines_filtered.value,
-            self.count_lines_skipped_user_agent.value,
-            self.count_lines_skipped_http_errors.value,
-            self.count_lines_skipped_http_redirects.value,
-            self.count_lines_static.value,
-            self.count_lines_skipped_downloads.value,
-            self.count_lines_no_site.value,
-            self.count_lines_hostname_skipped.value,
-        ]),
-    'count_lines_invalid': self.count_lines_invalid.value,
-    'count_lines_filtered': self.count_lines_filtered.value,
-    'count_lines_skipped_user_agent': self.count_lines_skipped_user_agent.value,
-    'count_lines_skipped_http_errors': self.count_lines_skipped_http_errors.value,
-    'count_lines_skipped_http_redirects': self.count_lines_skipped_http_redirects.value,
-    'count_lines_static': self.count_lines_static.value,
-    'count_lines_skipped_downloads': self.count_lines_skipped_downloads.value,
-    'count_lines_no_site': self.count_lines_no_site.value,
-    'count_lines_hostname_skipped': self.count_lines_hostname_skipped.value,
-    'total_sites': len(self.piwik_sites),
-    'total_sites_ignored': len(self.piwik_sites_ignored),
-    'sites_ignored': self._indent_text(
-            self.piwik_sites_ignored, level=3,
-        ),
-    'sites_ignored_tips': '''
+'''
+                % {
+                    'count_lines_recorded': self.count_lines_recorded.value,
+                    'count_lines_downloads': self.count_lines_downloads.value,
+                    'total_lines_ignored': sum(
+                        [
+                            self.count_lines_invalid.value,
+                            self.count_lines_filtered.value,
+                            self.count_lines_skipped_user_agent.value,
+                            self.count_lines_skipped_http_errors.value,
+                            self.count_lines_skipped_http_redirects.value,
+                            self.count_lines_static.value,
+                            self.count_lines_skipped_downloads.value,
+                            self.count_lines_no_site.value,
+                            self.count_lines_hostname_skipped.value,
+                        ]
+                    ),
+                    'count_lines_invalid': self.count_lines_invalid.value,
+                    'count_lines_filtered': self.count_lines_filtered.value,
+                    'count_lines_skipped_user_agent': self.count_lines_skipped_user_agent.value,
+                    'count_lines_skipped_http_errors': self.count_lines_skipped_http_errors.value,
+                    (
+                        'count_lines_skipped_' 'http_redirects'
+                    ): self.count_lines_skipped_http_redirects.value,
+                    'count_lines_static': self.count_lines_static.value,
+                    'count_lines_skipped_downloads': self.count_lines_skipped_downloads.value,
+                    'count_lines_no_site': self.count_lines_no_site.value,
+                    'count_lines_hostname_skipped': self.count_lines_hostname_skipped.value,
+                    'total_sites': len(self.piwik_sites),
+                    'total_sites_ignored': len(self.piwik_sites_ignored),
+                    'sites_ignored': self._indent_text(
+                        self.piwik_sites_ignored,
+                        level=3,
+                    ),
+                    'sites_ignored_tips': '''
         TIPs:
          - if one of these hosts is an alias host for one of the websites
            in Piwik, you can add this host as an "Alias URL" in Settings > Websites.
          - use --idsite to force all lines in the specified log files
            to be all recorded in the specified idsite
          - or you can also manually create a new Website in Piwik with the URL set to this hostname
-''' if self.piwik_sites_ignored else '',
-    'total_time': self.time_stop - self.time_start,
-    'speed_recording': self._round_value(self._compute_speed(
-            self.count_lines_recorded.value,
-            self.time_start, self.time_stop,
-        )),
-    'url': config.options.piwik_api_url,
-    'invalid_lines': invalid_lines_summary
-}))
+'''  # noqa: E501
+                    if self.piwik_sites_ignored
+                    else '',
+                    'total_time': self.time_stop - self.time_start,
+                    'speed_recording': self._round_value(
+                        self._compute_speed(
+                            self.count_lines_recorded.value,
+                            self.time_start,
+                            self.time_stop,
+                        )
+                    ),
+                    'invalid_lines': invalid_lines_summary,
+                }
+            )
+        )
 
-    ##
-    ## The monitor is a thread that prints a short summary each second.
-    ##
+    # The monitor is a thread that prints a short summary each second
 
     def _monitor(self):
         latest_total_recorded = 0
         while not self.monitor_stop:
             current_total = stats.count_lines_recorded.value
             time_elapsed = time.time() - self.time_start
-            print(('%d lines parsed, %d lines recorded, %d records/sec (avg), %d records/sec (current)' % (
-                stats.count_lines_parsed.value,
-                current_total,
-                current_total / time_elapsed if time_elapsed != 0 else 0,
-                (current_total - latest_total_recorded) / config.options.show_progress_delay,
-            )))
+            print(
+                '%d lines parsed, %d lines recorded, %d records/sec (avg), %d records/sec (current)'
+                % (
+                    stats.count_lines_parsed.value,
+                    current_total,
+                    current_total / time_elapsed if time_elapsed != 0 else 0,
+                    (current_total - latest_total_recorded) / config.options.show_progress_delay,
+                )
+            )
             latest_total_recorded = current_total
             time.sleep(config.options.show_progress_delay)
 
@@ -1270,8 +1623,8 @@ Performance summary
     def stop_monitor(self):
         self.monitor_stop = True
 
-class TimeHelper:
 
+class TimeHelper:
     @staticmethod
     def timedelta_from_timezone(timezone):
         timezone = int(timezone)
@@ -1283,23 +1636,25 @@ class TimeHelper:
 
         return datetime.timedelta(hours=hours, minutes=minutes)
 
-class UrlHelper:
 
+class UrlHelper:
     @staticmethod
     def convert_array_args(args):
         """
-        Converts PHP deep query param arrays (eg, w/ names like hsr_ev[abc][0][]=value) into a nested list/dict
-        structure that will convert correctly to JSON.
+        Converts PHP deep query param arrays (eg, w/ names like hsr_ev[abc][0][]=value)
+        into a nested list/dict structure that will convert correctly to JSON.
         """
 
         final_args = collections.OrderedDict()
         for key, value in args.items():
             indices = key.split('[')
             if '[' in key:
-                # contains list of all indices, eg for abc[def][ghi][] = 123, indices would be ['abc', 'def', 'ghi', '']
+                # contains list of all indices, eg for abc[def][ghi][] = 123,
+                # indices would be ['abc', 'def', 'ghi', '']
                 indices = [i.rstrip(']') for i in indices]
 
-                # navigate the multidimensional array final_args, creating lists/dicts when needed, using indices
+                # navigate the multidimensional array final_args,
+                # creating lists/dicts when needed, using indices
                 element = final_args
                 for i in range(0, len(indices) - 1):
                     idx = indices[i]
@@ -1312,9 +1667,9 @@ class UrlHelper:
                     element = element[idx]
 
                 # set the value in the final container we navigated to
-                if not indices[-1]: # last indice is '[]'
+                if not indices[-1]:  # last indice is '[]'
                     element.append(value)
-                else: # last indice has a key, eg, '[abc]'
+                else:  # last indice has a key, eg, '[abc]'
                     element[indices[-1]] = value
             else:
                 final_args[key] = value
@@ -1349,10 +1704,10 @@ class UrlHelper:
             result.append(d[str(i)])
         return result
 
+
 class PiwikHttpBase:
     class Error(Exception):
-
-        def __init__(self, message, code = None):
+        def __init__(self, message, code=None):
             super(PiwikHttpBase.Error, self).__init__(message)
 
             self.code = code
@@ -1372,7 +1727,9 @@ class PiwikHttpUrllib(PiwikHttpBase):
         def redirect_request(self, req, fp, code, msg, hdrs, newurl):
             logging.debug("Request redirected (code: %s) to '%s'" % (code, newurl))
 
-            return urllib.request.HTTPRedirectHandler.redirect_request(self, req, fp, code, msg, hdrs, newurl)
+            return urllib.request.HTTPRedirectHandler.redirect_request(
+                self, req, fp, code, msg, hdrs, newurl
+            )
 
     def _call(self, path, args=None, headers=None, url=None, data=None):
         """
@@ -1396,8 +1753,8 @@ class PiwikHttpUrllib(PiwikHttpBase):
 
         try:
             timeout = config.options.request_timeout
-        except:
-            timeout = None # the config global object may not be created at this point
+        except Exception:
+            timeout = None  # the config global object may not be created at this point
 
         request = urllib.request.Request(url + path, data, headers)
         logging.debug("Request url '%s'" % url)
@@ -1412,18 +1769,21 @@ class PiwikHttpUrllib(PiwikHttpBase):
         try:
             auth_user = config.options.auth_user
             auth_password = config.options.auth_password
-        except:
+        except Exception:
             auth_user = None
             auth_password = None
 
         if auth_user is not None:
-            base64string = base64.encodebytes('{}:{}'.format(auth_user, auth_password).encode()).decode().replace('\n', '')
+            base64string = (
+                base64.encodebytes('{}:{}'.format(auth_user, auth_password).encode())
+                .decode()
+                .replace('\n', '')
+            )
             request.add_header("Authorization", "Basic %s" % base64string)
 
         # Use non-default SSL context if invalid certificates shall be
         # accepted.
-        if config.options.accept_invalid_ssl_certificate and \
-                sys.version_info >= (2, 7, 9):
+        if config.options.accept_invalid_ssl_certificate and sys.version_info >= (2, 7, 9):
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
@@ -1431,9 +1791,9 @@ class PiwikHttpUrllib(PiwikHttpBase):
         else:
             https_handler_args = {}
         opener = urllib.request.build_opener(
-            self.RedirectHandlerWithLogging(),
-            urllib.request.HTTPSHandler(**https_handler_args))
-        response = opener.open(request, timeout = timeout)
+            self.RedirectHandlerWithLogging(), urllib.request.HTTPSHandler(**https_handler_args)
+        )
+        response = opener.open(request, timeout=timeout)
         encoding = response.info().get_content_charset('utf-8')
         result = response.read()
         response.close()
@@ -1451,14 +1811,18 @@ class PiwikHttpUrllib(PiwikHttpBase):
             headers = dict(headers)
 
         if config.piwik_token:
-            headers['Authorization'] = config.piwik_token['token_type'] + ' ' + config.piwik_token['access_token']
+            headers['Authorization'] = (
+                config.piwik_token['token_type'] + ' ' + config.piwik_token['access_token']
+            )
 
         result = self._call(path, args=args, data=data, headers=headers)
 
         try:
             return json.loads(result)
         except ValueError:
-            raise urllib.error.URLError('Piwik returned an invalid response: ' + result.decode("utf-8"))
+            raise urllib.error.URLError(
+                'Piwik returned an invalid response: ' + result.decode("utf-8")
+            )
 
     def _call_wrapper(self, func, expected_response, on_failure, *args, **kwargs):
         """
@@ -1472,11 +1836,20 @@ class PiwikHttpUrllib(PiwikHttpBase):
                     if on_failure is not None:
                         error_message = on_failure(response, kwargs.get('data'))
                     else:
-                        error_message = "didn't receive the expected response '%s'. Response was '%s' " % expected_response, response
+                        error_message = (
+                            "didn't receive the expected response '%s'. Response was '%s' "
+                            % expected_response,
+                            response,
+                        )
 
                     raise urllib.error.URLError(error_message)
                 return response
-            except (urllib.error.URLError, http.client.HTTPException, ValueError, socket.timeout) as e:
+            except (
+                urllib.error.URLError,
+                http.client.HTTPException,
+                ValueError,
+                socket.timeout,
+            ) as e:
                 logging.info('Error when connecting to Piwik: %s', e)
 
                 code = None
@@ -1527,16 +1900,17 @@ class PiwikHttpUrllib(PiwikHttpBase):
         return self._call_authentication_wrapper(self._call_api, method, **kwargs)
 
     def call(self, path, args, expected_content=None, headers=None, data=None, on_failure=None):
-        return self._call_wrapper(self.auth_call, expected_content, on_failure, path, args, headers, data=data)
+        return self._call_wrapper(
+            self.auth_call, expected_content, on_failure, path, args, headers, data=data
+        )
 
     def call_api(self, method, **kwargs):
         return self._call_wrapper(self.auth_call_api, None, None, method, **kwargs)
 
-##
-## Resolvers.
-##
-## A resolver is a class that turns a hostname into a Piwik site ID.
-##
+
+# Resolvers
+# A resolver is a class that turns a hostname into a Piwik site ID.
+
 
 class StaticResolver:
     """
@@ -1573,6 +1947,7 @@ class StaticResolver:
     def check_format(self, format):
         pass
 
+
 class DynamicResolver:
     """
     Use Piwik API to determine the site ID.
@@ -1583,7 +1958,9 @@ class DynamicResolver:
 
     def _get_site_id_from_hit_host(self, hit):
         try:
-            return piwik.auth_call_api('/api/tracker/v2/settings/app/url', args={'app_url': hit.host})
+            return piwik.auth_call_api(
+                '/api/tracker/v2/settings/app/url', args={'app_url': hit.host}
+            )
         except urllib.error.URLError as e:
             if e.code == 404:
                 return None
@@ -1615,9 +1992,7 @@ class DynamicResolver:
         try:
             site_id = self._cache[hit.host]
         except KeyError:
-            logging.debug(
-                'Site ID for hostname %s not in cache', hit.host
-            )
+            logging.debug('Site ID for hostname %s not in cache', hit.host)
             site_id = self._resolve(hit)
             logging.debug('Site ID for hostname %s: %s', hit.host, site_id)
             self._cache[hit.host] = site_id
@@ -1629,7 +2004,8 @@ class DynamicResolver:
         If replay_tracking option is enabled, call _resolve_when_replay_tracking.
         """
         if config.options.replay_tracking:
-            # We only consider requests with piwik.php, ppms.php, js/ or js/tracker.php which don't need host to be imported
+            # We only consider requests with piwik.php, ppms.php, js/ or
+            # js/tracker.php which don't need host to be imported
             return self._resolve_when_replay_tracking(hit)
         else:
             # Workaround for empty Host bug issue #126
@@ -1640,12 +2016,17 @@ class DynamicResolver:
     def check_format(self, format):
         if config.options.replay_tracking:
             pass
-        elif format.regex is not None and 'host' not in format.regex.groupindex and not config.options.log_hostname:
+        elif (
+            format.regex is not None
+            and 'host' not in format.regex.groupindex
+            and not config.options.log_hostname
+        ):
             fatal_error(
                 "the selected log format doesn't include the hostname: you must "
                 "specify the Piwik site ID with the --idsite argument "
                 "or host with --hostname argument"
             )
+
 
 class Recorder:
     """
@@ -1704,20 +2085,23 @@ class Recorder:
         while True:
             try:
                 hits = self.queue.get()
-            except:
-                # TODO: we should log something here, however when this happens, logging.etc will throw
+            except Exception:
+                # TODO: we should log something here, however when this happens,
+                # logging.etc will throw
                 return
 
             if len(hits) > 0:
                 try:
                     self._record_hits(hits)
                 except PiwikHttpBase.Error as e:
-                    fatal_error(e, hits[0].filename, hits[0].lineno) # approximate location of error
+                    fatal_error(
+                        e, hits[0].filename, hits[0].lineno
+                    )  # approximate location of error
             self.queue.task_done()
 
     def _run_single(self):
         while True:
-            if config.options.force_one_action_interval != False:
+            if config.options.force_one_action_interval is not False:
                 time.sleep(config.options.force_one_action_interval)
 
             self.unrecorded_hits = self.queue.get()
@@ -1785,7 +2169,7 @@ class Recorder:
             'idsite': site_id,
             'queuedtracking': '0',
             'dp': '0' if config.options.reverse_dns else '1',
-            'ua': hit.user_agent
+            'ua': hit.user_agent,
         }
 
         if config.options.replay_tracking:
@@ -1793,7 +2177,11 @@ class Recorder:
             args['rec'] = '0'
         else:
             # only prepend main url / host if it's a path
-            url_prefix = self._get_host_with_protocol(hit.host, main_url) if hasattr(hit, 'host') else main_url
+            url_prefix = (
+                self._get_host_with_protocol(hit.host, main_url)
+                if hasattr(hit, 'host')
+                else main_url
+            )
             url = (url_prefix if path.startswith('/') else '') + path[:1024]
 
             args['url'] = url
@@ -1818,10 +2206,15 @@ class Recorder:
                 hit.status,
                 config.options.title_category_delimiter,
                 urllib.parse.quote(args['url'], ''),
-                ("%sFrom = %s" % (
-                    config.options.title_category_delimiter,
-                    urllib.parse.quote(args['urlref'], '')
-                ) if 'urlref' in args else '')
+                (
+                    "%sFrom = %s"
+                    % (
+                        config.options.title_category_delimiter,
+                        urllib.parse.quote(args['urlref'], ''),
+                    )
+                    if 'urlref' in args
+                    else ''
+                ),
             )
 
         if hit.generation_time_milli > 0:
@@ -1875,9 +2268,7 @@ class Recorder:
                 hit_count = int(len(args) > 0)
             else:
                 headers = {'Content-type': 'application/json'}
-                data = {
-                    'requests': []
-                }
+                data = {'requests': []}
                 args = {}
                 for hit in hits:
                     next_hit = self._get_hit_args(hit)
@@ -1891,12 +2282,12 @@ class Recorder:
                         args['debug'] = '1'
 
                     response = piwik.call(
-                        config.options.piwik_tracker_endpoint_path, 
+                        config.options.piwik_tracker_endpoint_path,
                         args=args,
                         expected_content=None,
                         headers=headers,
                         data=data,
-                        on_failure=self._on_tracking_failure
+                        on_failure=self._on_tracking_failure,
                     )
 
                     if config.options.debug_tracker:
@@ -1906,8 +2297,11 @@ class Recorder:
                     # if the server returned 400 code, BulkTracking may not be enabled
                     if e.code == 400:
                         fatal_error(
-                            "Server returned status 400 (Bad Request).\nIs the BulkTracking plugin disabled?",
-                            hits[0].filename, hits[0].lineno)
+                            "Server returned status 400 (Bad Request).\nIs the BulkTracking plugin"
+                            " disabled?",
+                            hits[0].filename,
+                            hits[0].lineno,
+                        )
 
                     raise
 
@@ -1927,8 +2321,9 @@ class Recorder:
         """
         try:
             response = json.loads(response)
-        except:
-            # the response should be in JSON, but in case it can't be parsed just try another attempt
+        except Exception:
+            # the response should be in JSON,
+            # but in case it can't be parsed just try another attempt
             logging.debug("cannot parse tracker response, should be valid JSON")
             return response
 
@@ -1938,10 +2333,12 @@ class Recorder:
 
         return response['message']
 
+
 class Hit:
     """
     It's a simple container.
     """
+
     def __init__(self, **kwargs):
         for key, value in kwargs.items():
             setattr(self, key, value)
@@ -1978,11 +2375,15 @@ class Hit:
             self.args[api_arg_name] = {}
 
         if isinstance(self.args[api_arg_name], str):
-            logging.debug("Ignoring custom %s variable addition [ %s = %s ], custom var already set to string." % (api_arg_name, key, value))
+            logging.debug(
+                "Ignoring custom %s variable addition [ %s = %s ], custom var already set to"
+                " string." % (api_arg_name, key, value)
+            )
             return
 
         index = len(self.args[api_arg_name]) + 1
         self.args[api_arg_name][index] = [key, value]
+
 
 class Parser:
     """
@@ -1991,12 +2392,14 @@ class Parser:
     """
 
     def __init__(self):
-        self.check_methods = [method for name, method
-                              in inspect.getmembers(self, predicate=inspect.ismethod)
-                              if name.startswith('check_')]
+        self.check_methods = [
+            method
+            for name, method in inspect.getmembers(self, predicate=inspect.ismethod)
+            if name.startswith('check_')
+        ]
 
-    ## All check_* methods are called for each hit and must return True if the
-    ## hit can be imported, False otherwise.
+    # All check_* methods are called for each hit and must return True if the
+    # hit can be imported, False otherwise.
 
     def check_hostname(self, hit):
         # Check against config.hostnames.
@@ -2004,10 +2407,7 @@ class Parser:
             return True
 
         # Accept the hostname only if it matches one pattern in the list.
-        result = any(
-            fnmatch.fnmatch(hit.host, pattern)
-            for pattern in config.options.hostnames
-        )
+        result = any(fnmatch.fnmatch(hit.host, pattern) for pattern in config.options.hostnames)
         if not result:
             stats.count_lines_hostname_skipped.increment()
         return result
@@ -2051,7 +2451,8 @@ class Parser:
     def check_http_error(self, hit):
         if hit.status[0] in ('4', '5'):
             if config.options.replay_tracking:
-                # process error logs for replay tracking, since we don't care if piwik error-ed the first time
+                # process error logs for replay tracking,
+                # since we don't care if piwik error-ed the first time
                 return True
             elif config.options.enable_http_errors:
                 hit.is_error = True
@@ -2077,10 +2478,10 @@ class Parser:
                 return False
         # By default, all paths are included.
         if config.options.included_paths:
-           for included_path in config.options.included_paths:
-               if fnmatch.fnmatch(hit.path, included_path):
-                   return True
-           return False
+            for included_path in config.options.included_paths:
+                if fnmatch.fnmatch(hit.path, included_path):
+                    return True
+            return False
         return True
 
     @staticmethod
@@ -2123,7 +2524,8 @@ class Parser:
             else:
                 logging.debug('Format %s does not match', name)
 
-        # if the format is W3cExtendedFormat, check if the logs are from IIS and if so, issue a warning if the
+        # if the format is W3cExtendedFormat,
+        # check if the logs are from IIS and if so, issue a warning if the
         # --w3c-time-taken-milli option isn't set
         if isinstance(format, W3cExtendedFormat):
             format.check_for_iis_option()
@@ -2147,7 +2549,7 @@ class Parser:
         limit = 100000
         while not format and lineno < limit:
             line = file.readline()
-            if not line: # if at eof, don't keep looping
+            if not line:  # if at eof, don't keep looping
                 break
 
             lineno = lineno + 1
@@ -2161,8 +2563,12 @@ class Parser:
             pass
 
         if not format:
-            fatal_error("cannot automatically determine the log format using the first %d lines of the log file. " % limit +
-                        "\nMaybe try specifying the format with the --log-format-name command line argument." )
+            fatal_error(
+                "cannot automatically determine the log format using the first %d lines of the log"
+                " file. " % limit
+                + "\nMaybe try specifying the format with the --log-format-name command line"
+                " argument."
+            )
             return
 
         logging.debug('Format %s is the best match', format.name)
@@ -2175,14 +2581,22 @@ class Parser:
         else:
             try:
                 host = urllib.parse.urlparse(hit.path).hostname
-            except:
+            except Exception:
                 pass
 
         if host:
-            if config.options.exclude_host and len(config.options.exclude_host) > 0 and host in config.options.exclude_host:
+            if (
+                config.options.exclude_host
+                and len(config.options.exclude_host) > 0
+                and host in config.options.exclude_host
+            ):
                 return (True, 'host matched --exclude-host')
 
-            if config.options.include_host and len(config.options.include_host) > 0 and host not in config.options.include_host:
+            if (
+                config.options.include_host
+                and len(config.options.include_host) > 0
+                and host not in config.options.include_host
+            ):
                 return (True, 'host did not match --include-host')
 
         if config.options.exclude_older_than and hit.date < config.options.exclude_older_than:
@@ -2197,6 +2611,7 @@ class Parser:
         """
         Parse the specified filename and insert hits in the queue.
         """
+
         def invalid_line(line, reason):
             stats.count_lines_invalid.increment()
             if config.options.debug >= 2:
@@ -2222,7 +2637,9 @@ class Parser:
                 else:
                     open_func = open
 
-                file = open_func(filename, mode='rt', encoding=config.options.encoding, errors="surrogateescape")
+                file = open_func(
+                    filename, mode='rt', encoding=config.options.encoding, errors="surrogateescape"
+                )
 
         if config.options.show_progress:
             print(('Parsing log %s...' % filename))
@@ -2273,7 +2690,8 @@ class Parser:
         lineno = -1
         while True:
             line = file.readline()
-            if not line: break
+            if not line:
+                break
             lineno = lineno + 1
 
             stats.count_lines_parsed.increment()
@@ -2286,7 +2704,10 @@ class Parser:
                 continue
 
             valid_lines_count = valid_lines_count + 1
-            if config.options.debug_request_limit and valid_lines_count >= config.options.debug_request_limit:
+            if (
+                config.options.debug_request_limit
+                and valid_lines_count >= config.options.debug_request_limit
+            ):
                 if len(hits) > 0:
                     Recorder.add_hits(hits)
                 logging.info("Exceeded limit specified in --debug-request-limit, exiting.")
@@ -2305,10 +2726,14 @@ class Parser:
             )
 
             if config.options.regex_group_to_page_cvars_map:
-                self._add_custom_vars_from_regex_groups(hit, format, config.options.regex_group_to_page_cvars_map, True)
+                self._add_custom_vars_from_regex_groups(
+                    hit, format, config.options.regex_group_to_page_cvars_map, True
+                )
 
             if config.options.regex_group_to_visit_cvars_map:
-                self._add_custom_vars_from_regex_groups(hit, format, config.options.regex_group_to_visit_cvars_map, False)
+                self._add_custom_vars_from_regex_groups(
+                    hit, format, config.options.regex_group_to_visit_cvars_map, False
+                )
 
             if config.options.regex_groups_to_ignore:
                 format.remove_ignored_groups(config.options.regex_groups_to_ignore)
@@ -2318,16 +2743,19 @@ class Parser:
                 httpmethod = format.get('method')
                 if config.options.track_http_method and httpmethod != '-':
                     hit.add_page_custom_var('HTTP-method', httpmethod)
-            except:
+            except Exception:
                 pass
 
             try:
                 hit.query_string = format.get('query_string')
                 hit.path = hit.full_path
             except BaseFormatException:
-                hit.path, _, hit.query_string = hit.full_path.partition(config.options.query_string_delimiter)
+                hit.path, _, hit.query_string = hit.full_path.partition(
+                    config.options.query_string_delimiter
+                )
 
-            # W3cExtendedFormat detaults to - when there is no query string, but we want empty string
+            # W3cExtendedFormat detaults to - when there is no query string,
+            # but we want empty string
             if hit.query_string == '-':
                 hit.query_string = ''
 
@@ -2390,7 +2818,7 @@ class Parser:
                 userid = format.get('userid')
                 if userid != '-':
                     hit.args['uid'] = hit.userid = userid
-            except:
+            except Exception:
                 pass
 
             # add event info
@@ -2403,7 +2831,7 @@ class Parser:
                 hit.event_name = format.get('event_name')
                 if hit.event_name == '-':
                     hit.event_name = None
-            except:
+            except Exception:
                 pass
 
             # Check if the hit must be excluded.
@@ -2416,7 +2844,7 @@ class Parser:
             date_string = format.get('date')
             try:
                 hit.date = datetime.datetime.strptime(date_string, format.date_format)
-                hit.date += datetime.timedelta(seconds = config.options.seconds_to_add_to_date)
+                hit.date += datetime.timedelta(seconds=config.options.seconds_to_add_to_date)
             except ValueError as e:
                 invalid_line(line, 'invalid date or invalid format: %s' % str(e))
                 continue
@@ -2433,13 +2861,19 @@ class Parser:
                 continue
 
             if config.options.replay_tracking:
-                # we need a query string and we only consider requests with piwik.php, ppms.php, js/ or js/tracker.php
+                # we need a query string and we only consider requests with piwik.php,
+                # ppms.php, js/ or js/tracker.php
                 if not hit.query_string or not self.is_hit_for_tracker(hit):
-                    invalid_line(line, 'no query string, or ' + hit.path.lower() + ' does not end with piwik.php, ppms.php, js/ or js/tracker.php')
+                    invalid_line(
+                        line,
+                        'no query string, or '
+                        + hit.path.lower()
+                        + ' does not end with piwik.php, ppms.php, js/ or js/tracker.php',
+                    )
                     continue
 
                 query_arguments = urllib.parse.parse_qs(hit.query_string)
-                if not "idsite" in query_arguments:
+                if "idsite" not in query_arguments:
                     invalid_line(line, 'missing idsite')
                     continue
 
@@ -2448,7 +2882,9 @@ class Parser:
                 if config.options.seconds_to_add_to_date:
                     for param in ['_idts', '_viewts', '_ects', '_refts']:
                         if param in hit.args:
-                            hit.args[param] = int(hit.args[param]) + config.options.seconds_to_add_to_date
+                            hit.args[param] = (
+                                int(hit.args[param]) + config.options.seconds_to_add_to_date
+                            )
 
             (is_filtered, reason) = self.is_filtered(hit)
             if is_filtered:
@@ -2490,6 +2926,7 @@ class Parser:
                 else:
                     hit.add_visit_custom_var(custom_var_name, value)
 
+
 def main():
     """
     Start the importing process.
@@ -2499,7 +2936,7 @@ def main():
     if config.options.show_progress:
         stats.start_monitor()
 
-    recorders = Recorder.launch(config.options.recorders)
+    Recorder.launch(config.options.recorders)
 
     try:
         for filename in config.filenames:
@@ -2516,14 +2953,17 @@ def main():
 
     stats.print_summary()
 
+
 def fatal_error(error, filename=None, lineno=None):
     print('Fatal error: %s' % error, file=sys.stderr)
     if filename and lineno is not None:
-        print((
+        print(
             'You can restart the import of "%s" from the point it failed by '
-            'specifying --skip=%d on the command line.\n' % (filename, lineno)
-        ), file=sys.stderr)
+            'specifying --skip=%d on the command line.\n' % (filename, lineno),
+            file=sys.stderr,
+        )
     os._exit(1)
+
 
 if __name__ == '__main__':
     try:

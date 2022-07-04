@@ -23,10 +23,6 @@ The script will import all standard web server log files, and some files with no
 
 In general, many fields are left optional to make the log importer very flexible.
 
-## Get involved
-
-We're looking for contributors! Feel free to submit Pull requests on Github.
-
 ### Submit a new log format
 
 The Log Analytics importer is designed to detect and import into Piwik as many log files as possible. Help us add your log formats!
