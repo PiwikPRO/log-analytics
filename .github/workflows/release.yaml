@@ -1,0 +1,31 @@
+on:
+  push:
+    tags: ["**"]
+
+name: Release
+jobs:
+  binary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+
+      - name: Download dtools
+        uses: PiwikPRO/actions/dtools/setup@master
+        with:
+          dtools-token: ${{ secrets.DTOOLS_TOKEN }}
+          reporeader-private-key: ${{ secrets.REPOREADER_PRIVATE_KEY }}
+          reporeader-application-id: ${{ secrets.REPOREADER_APPLICATION_ID }}
+
+      - name: Build docker image
+        env:
+          PP_DTOOLS_TOKEN: ${{ secrets.DTOOLS_TOKEN }}
+        run: docker build -f Dockerfile . -t "framework/log-analytics"
+
+      - name: Push docker image
+        uses: PiwikPRO/actions/dtools/push@master
+        if: ${{ github.ref_type == 'tag' }}
+        with:
+          dtools-token: ${{ secrets.DTOOLS_TOKEN }}
+          image: "framework/log-analytics"

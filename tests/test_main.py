@@ -66,8 +66,8 @@ def tearDownModule():
         os.remove('tmp.log')
 
 
-def test_format_detection():
-    def _test(format_name, log_file=None):
+class TestFormatDetection:
+    def _test(self, format_name, log_file=None):
         if log_file is None:
             log_file = 'logs/%s.log' % format_name
 
@@ -77,7 +77,7 @@ def test_format_detection():
         assert format is not None
         assert format.name == format_name
 
-    def _test_junk(format_name, log_file=None):
+    def _test_junk(self, format_name, log_file=None):
         if log_file is None:
             log_file = 'logs/%s.log' % format_name
 
@@ -89,7 +89,7 @@ def test_format_detection():
         assert format is not None
         assert format.name == format_name
 
-    def _test_multiple_spaces(format_name, log_file=None):
+    def _test_multiple_spaces(self, format_name, log_file=None):
         if log_file is None:
             log_file = 'logs/%s.log' % format_name
 
@@ -101,7 +101,7 @@ def test_format_detection():
         assert format is not None
         assert format.name == format_name
 
-    def _test_ipv6(format_name, log_file=None):
+    def _test_ipv6(self, format_name, log_file=None):
         if log_file is None:
             log_file = 'logs/%s.log' % format_name
 
@@ -118,50 +118,53 @@ def test_format_detection():
         groups = parse_log_file_line(format_name, tmp_path)
         assert groups['ip'] == '0:0:0:0:0:ffff:7b2d:4359'
 
-    for format_name in import_logs.FORMATS.keys():
-        # w3c extended tested by iis and netscaler log files; amazon cloudfront tested later
-        if (
-            format_name == 'w3c_extended'
-            or format_name == 'amazon_cloudfront'
-            or format_name == 'ovh'
-            or format_name == 'gandi'
-            or format_name == 'haproxy'
-            or format_name == 'incapsula_w3c'
-        ):
-            continue
+    def test_format_detection(self):
 
-        # 'Testing autodetection of format ' + format_name
-        _test(format_name)
+        for format_name in import_logs.FORMATS.keys():
+            # w3c extended tested by iis and netscaler log files; amazon cloudfront tested later
+            if (
+                format_name == 'w3c_extended'
+                or format_name == 'amazon_cloudfront'
+                or format_name == 'ovh'
+                or format_name == 'gandi'
+                or format_name == 'haproxy'
+                or format_name == 'incapsula_w3c'
+            ):
+                continue
 
-        # 'Testing autodetection of format ' + format_name + ' w/ garbage at end of line'
-        _test_junk(format_name)
+            # 'Testing autodetection of format ' + format_name
+            self._test(format_name)
 
-        # 'Testing autodetection of format ' + format_name + ' when multiple spaces separate fields'
-        _test_multiple_spaces(format_name)
+            # 'Testing autodetection of format ' + format_name + ' w/ garbage at end of line'
+            self._test_junk(format_name)
 
-        # 'Testing parsing of IPv6 address with format ' + format_name
-        _test_ipv6(format_name)
+            # 'Testing autodetection of format ' + format_name + '
+            # when multiple spaces separate fields'
+            self._test_multiple_spaces(format_name)
 
-    # add tests for amazon cloudfront (normal web + rtmp)
-    # 'Testing autodetection of amazon cloudfront (web) logs.'
-    _test('amazon_cloudfront', 'logs/amazon_cloudfront_web.log')
+            # 'Testing parsing of IPv6 address with format ' + format_name
+            self._test_ipv6(format_name)
 
-    # ' Testing autodetection of amazon cloudfront (web) logs w/ garbage at end of line'
-    _test_junk('amazon_cloudfront', 'logs/amazon_cloudfront_web.log')
+        # add tests for amazon cloudfront (normal web + rtmp)
+        # 'Testing autodetection of amazon cloudfront (web) logs.'
+        self._test('amazon_cloudfront', 'logs/amazon_cloudfront_web.log')
 
-    # 'Testing autodetection of format amazon cloudfront (web)
-    # logs when multiple spaces separate fields'
-    _test_multiple_spaces('amazon_cloudfront', 'logs/amazon_cloudfront_web.log')
+        # ' Testing autodetection of amazon cloudfront (web) logs w/ garbage at end of line'
+        self._test_junk('amazon_cloudfront', 'logs/amazon_cloudfront_web.log')
 
-    # 'Testing autodetection of amazon cloudfront (rtmp) logs.'
-    _test('amazon_cloudfront', 'logs/amazon_cloudfront_rtmp.log')
+        # 'Testing autodetection of format amazon cloudfront (web)
+        # logs when multiple spaces separate fields'
+        self._test_multiple_spaces('amazon_cloudfront', 'logs/amazon_cloudfront_web.log')
 
-    # 'Testing autodetection of amazon cloudfront (rtmp) logs w/ garbage at end of line.'
-    _test_junk('amazon_cloudfront', 'logs/amazon_cloudfront_rtmp.log')
+        # 'Testing autodetection of amazon cloudfront (rtmp) logs.'
+        self._test('amazon_cloudfront', 'logs/amazon_cloudfront_rtmp.log')
 
-    # 'Testing autodetection of format amazon cloudfront (rtmp)
-    # logs when multiple spaces separate fields'
-    _test_multiple_spaces('amazon_cloudfront', 'logs/amazon_cloudfront_rtmp.log')
+        # 'Testing autodetection of amazon cloudfront (rtmp) logs w/ garbage at end of line.'
+        self._test_junk('amazon_cloudfront', 'logs/amazon_cloudfront_rtmp.log')
+
+        # 'Testing autodetection of format amazon cloudfront (rtmp)
+        # logs when multiple spaces separate fields'
+        self._test_multiple_spaces('amazon_cloudfront', 'logs/amazon_cloudfront_rtmp.log')
 
 
 class Options(object):
@@ -679,8 +682,9 @@ def test_netscaler_parsing():
     assert hits[0]['path'] == '/Citrix/XenApp/Wan/auth/login.jsp'
     assert hits[0]['is_robot'] is False
     assert hits[0]['full_path'] == '/Citrix/XenApp/Wan/auth/login.jsp'
-    assert hits[0]['user_agent'] == (
-        'Mozilla/4.0+(compatible;+MSIE+7.0;+Windows+NT+5.1;+Trident/4.0;+.NET+CLR+1.1.4322;'
+    assert (
+        hits[0]['user_agent']
+        == 'Mozilla/4.0+(compatible;+MSIE+7.0;+Windows+NT+5.1;+Trident/4.0;+.NET+CLR+1.1.4322;'
         '+.NET+CLR+2.0.50727;+.NET+CLR+3.0.04506.648;+.NET+CLR+3.5.21022)'
     )
 
