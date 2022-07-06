@@ -1,6 +1,4 @@
 #!/usr/bin/python
-# vim: et sw=4 ts=4:
-# -*- coding: utf-8 -*-
 #
 # Piwik PRO - take control of your data
 #
@@ -9,8 +7,6 @@
 # @version $Id$
 #
 # For more info see: https://github.com/PiwikPRO/log-analytics/
-#
-# Requires Python 3.6+
 
 import sys
 
@@ -577,8 +573,7 @@ class AddSlashAtStart(argparse.Action):
 
 class Configuration:
     """
-    Stores all the configuration options by reading sys.argv and parsing,
-    if needed, the config.inc.php.
+    Stores all the configuration options by reading sys.argv and parsing.
 
     It has 2 attributes: options and filenames.
     """
@@ -595,17 +590,16 @@ class Configuration:
         parser = argparse.ArgumentParser(
             # usage='Usage: %prog [options] log_file [ log_file [...] ]',
             description=(
-                "Import HTTP access logs to Piwik. log_file is the path to a server access log file"
-                " (uncompressed, .gz, .bz2, or specify - to read from stdin).  You may also import"
-                " many log files at once (for example set log_file to *.log or *.log.gz). By"
+                "Import HTTP access logs to Piwik PRO. log_file is the path to a server access  log"
+                " file (uncompressed, .gz, .bz2, or specify - to read from stdin). You may also"
+                " import many log files at once (for example set log_file to *.log or *.log.gz). By"
                 " default, the script will try to produce clean reports and will exclude bots,"
                 " static files, discard http error and redirects, etc. This is customizable, see"
                 " below."
             ),
             epilog=(
-                "About Piwik Server Log Analytics: http://piwik.org/log-analytics/              "
-                " Found a bug? Please create a ticket in http://dev.piwik.org/               Please"
-                " send your suggestions or successful user story to hello@piwik.org "
+                "About Piwik PRO Server Log Analytics: https://github.com/PiwikPRO/log-analytics/ "
+                " Found a bug? Please create a Github issue. "
             ),
         )
 
@@ -636,13 +630,8 @@ class Configuration:
             dest='debug_tracker',
             action='store_true',
             default=False,
-            help=(
-                "Appends &debug=1 to tracker requests and prints out the result so the tracker can"
-                " be debugged. If using the log importer results in errors with the tracker or"
-                " improperly recorded visits, this option can be used to find out what the tracker"
-                " is doing wrong. To see debug tracker output, you must also set the [Tracker]"
-                " debug_on_demand INI config to 1 in your Piwik's config.ini.php file."
-            ),
+            # This is now internal flag, not meant to be used by the users
+            help=argparse.SUPPRESS,
         )
         parser.add_argument(
             '--debug-request-limit',
@@ -655,31 +644,34 @@ class Configuration:
             ),
         )
         parser.add_argument(
+            '--debug-force-one-hit-every-Ns',
+            dest='force_one_action_interval',
+            default=False,
+            type=float,
+            help="Debug option that will force each recorder to record one hit every N secs.",
+        )
+        parser.add_argument(
             '--url',
             dest='piwik_url',
             required=True,
-            help=(
-                "REQUIRED Your Piwik server URL, eg. https://example.com/piwik/ or"
-                " https://analytics.example.net"
-            ),
+            help="REQUIRED Your Piwik PRO server URL, eg. https://example.piwik.pro/",
         )
         parser.add_argument(
             '--api-url',
             dest='piwik_api_url',
             help=(
                 "This URL will be used to send API requests (use it if your tracker URL differs"
-                " from UI/API url), eg. https://other-example.com/piwik/ or"
-                " https://analytics-api.example.net"
+                " from UI/API url), eg. https://example.piwik.pro/"
             ),
         )
         parser.add_argument(
             '--tracker-endpoint-path',
             dest='piwik_tracker_endpoint_path',
-            default='/piwik.php',
+            default='/ppms.php',
             action=AddSlashAtStart,
             help=(
                 "The tracker endpoint path to use to send requests to tracker. Defaults to"
-                " /piwik.php.If you want to change tracker endpoint that should be detected in logs"
+                " /ppms.php.If you want to change tracker endpoint that should be detected in logs"
                 " files use `--replay-tracking-expected-tracker-file`."
             ),
         )
@@ -688,7 +680,7 @@ class Configuration:
             dest='dry_run',
             action='store_true',
             default=False,
-            help="Perform a trial run with no tracking data being inserted into Piwik",
+            help="Perform a trial run with no tracking data being inserted into Piwik PRO",
         )
         parser.add_argument(
             '--show-progress',
@@ -711,8 +703,8 @@ class Configuration:
             '--idsite',
             dest='site_id',
             help=(
-                "When specified, data in the specified log files will be tracked for this Piwik"
-                " site ID. The script will not auto-detect the website based on the log line"
+                "When specified, data in the specified log files will be tracked for this Piwik PRO"
+                " App ID. The script will not auto-detect the website based on the log line"
                 " hostname (new websites will not be automatically created)."
             ),
         )
@@ -745,7 +737,7 @@ class Configuration:
             action='append',
             default=[],
             help=(
-                "Any URL path matching this exclude-path will not be imported in Piwik. "
+                "Any URL path matching this exclude-path will not be imported in Piwik PRO. "
                 " You must use the star character *. "
                 " Example: --exclude-path=*/admin/*"
                 " Can be specified multiple times. "
@@ -821,7 +813,7 @@ class Configuration:
             action='store_true',
             default=False,
             help=(
-                "Enable reverse DNS, used to generate the 'Providers' report in Piwik. "
+                "Enable reverse DNS, used to generate the 'ISP' report in Piwik PRO. "
                 "Disabled by default, as it impacts performance"
             ),
         )
@@ -968,13 +960,6 @@ class Configuration:
             ),
         )
         parser.add_argument(
-            '--debug-force-one-hit-every-Ns',
-            dest='force_one_action_interval',
-            default=False,
-            type=float,
-            help="Debug option that will force each recorder to record one hit every N secs.",
-        )
-        parser.add_argument(
             '--force-lowercase-path',
             dest='force_lowercase_path',
             default=False,
@@ -989,9 +974,9 @@ class Configuration:
             dest='download_extensions',
             default=None,
             help=(
-                "By default Piwik tracks as Downloads the most popular file extensions. If you set"
-                " this parameter (format: pdf,doc,...) then files with an extension found in the"
-                " list will be imported as Downloads, other file extensions downloads will be"
+                "By default Piwik PRO tracks as Downloads the most popular file extensions. If you"
+                " set this parameter (format: pdf,doc,...) then files with an extension found in"
+                " the list will be imported as Downloads, other file extensions downloads will be"
                 " skipped."
             ),
         )
@@ -1065,7 +1050,7 @@ class Configuration:
             default='/',
             help=(
                 "If --enable-http-errors is used, errors are shown in the page titles report. If"
-                " you have changed General.action_title_category_delimiter in your Piwik"
+                " you have changed General.action_title_category_delimiter in your Piwik PRO"
                 " configuration, you need to set this option to the same value in order to get a"
                 " pretty page titles report."
             ),
@@ -1101,7 +1086,7 @@ class Configuration:
             default={},
             help=(
                 "Track an attribute through a custom variable with visit scope instead of through"
-                " Piwik's normal approach. For example, to track usernames as a custom variable"
+                " Piwik PRO's normal approach. For example, to track usernames as a custom variable"
                 " instead of through the uid tracking parameter, supply"
                 " --regex-group-to-visit-cvar=\"userid=User Name\". This will track usernames in a"
                 " custom variable named 'User Name'. The list of available regex groups can be"
@@ -1117,7 +1102,7 @@ class Configuration:
             default={},
             help=(
                 "Track an attribute through a custom variable with page scope instead of through"
-                " Piwik's normal approach. For example, to track usernames as a custom variable"
+                " Piwik PRO's normal approach. For example, to track usernames as a custom variable"
                 " instead of through the uid tracking parameter, supply"
                 " --regex-group-to-page-cvar=\"userid=User Name\". This will track usernames in a"
                 " custom variable named 'User Name'. The list of available regex groups can be"
@@ -1154,7 +1139,8 @@ class Configuration:
             default=DEFAULT_SOCKET_TIMEOUT,
             type=int,
             help=(
-                "The maximum number of seconds to wait before terminating an HTTP request to Piwik."
+                "The maximum number of seconds to wait before terminating an HTTP request to Piwik"
+                " PRO."
             ),
         )
         parser.add_argument(
@@ -1206,14 +1192,7 @@ class Configuration:
             dest='accept_invalid_ssl_certificate',
             action='store_true',
             default=False,
-            help="Do not verify the SSL / TLS certificate when contacting the Piwik server.",
-        )
-        parser.add_argument(
-            '--php-binary',
-            dest='php_binary',
-            type=str,
-            default='php',
-            help="Specify the PHP binary to use.",
+            help="Do not verify the SSL / TLS certificate when contacting the Piwik PRO server.",
         )
         return parser
 
@@ -1323,7 +1302,7 @@ class Configuration:
             or self.options.piwik_url.startswith('https://')
         ):
             self.options.piwik_url = 'https://' + self.options.piwik_url
-        logging.debug('Piwik Tracker API URL is: %s', self.options.piwik_url)
+        logging.debug('Piwik PRO Tracker API URL is: %s', self.options.piwik_url)
 
         if not self.options.piwik_api_url:
             self.options.piwik_api_url = self.options.piwik_url
@@ -1333,7 +1312,7 @@ class Configuration:
             or self.options.piwik_api_url.startswith('https://')
         ):
             self.options.piwik_api_url = 'https://' + self.options.piwik_api_url
-        logging.debug('Piwik Analytics API URL is: %s', self.options.piwik_api_url)
+        logging.debug('Piwik PRO Analytics API URL is: %s', self.options.piwik_api_url)
 
         if self.options.recorders < 1:
             self.options.recorders = 1
@@ -1436,14 +1415,14 @@ class Statistics:
         self.count_lines_parsed = self.Counter()
         self.count_lines_recorded = self.Counter()
 
-        # requests that the Piwik tracker considered invalid (or failed to track)
+        # requests that the Piwik PRO Tracker considered invalid (or failed to track)
         self.invalid_lines = []
 
         # Do not match the regexp.
         self.count_lines_invalid = self.Counter()
         # Were filtered out.
         self.count_lines_filtered = self.Counter()
-        # No site ID found by the resolver.
+        # No app ID found by the resolver.
         self.count_lines_no_site = self.Counter()
         # Hostname filtered by config.options.hostnames
         self.count_lines_hostname_skipped = self.Counter()
@@ -1499,7 +1478,7 @@ class Statistics:
             invalid_lines_summary = '''Invalid log lines
 -----------------
 
-The following lines were not tracked by Piwik, either due to a malformed tracker request
+The following lines were not tracked by Piwik PRO, either due to a malformed tracker request
 or error in the tracker:
 
 %s
@@ -1560,9 +1539,7 @@ Performance summary
                     'count_lines_filtered': self.count_lines_filtered.value,
                     'count_lines_skipped_user_agent': self.count_lines_skipped_user_agent.value,
                     'count_lines_skipped_http_errors': self.count_lines_skipped_http_errors.value,
-                    (
-                        'count_lines_skipped_' 'http_redirects'
-                    ): self.count_lines_skipped_http_redirects.value,
+                    'count_lines_skipped_http_redirects': self.count_lines_skipped_http_redirects.value,  # noqa: E501
                     'count_lines_static': self.count_lines_static.value,
                     'count_lines_skipped_downloads': self.count_lines_skipped_downloads.value,
                     'count_lines_no_site': self.count_lines_no_site.value,
@@ -1575,11 +1552,9 @@ Performance summary
                     ),
                     'sites_ignored_tips': '''
         TIPs:
-         - if one of these hosts is an alias host for one of the websites
-           in Piwik, you can add this host as an "Alias URL" in Settings > Websites.
          - use --idsite to force all lines in the specified log files
            to be all recorded in the specified idsite
-         - or you can also manually create a new Website in Piwik with the URL set to this hostname
+         - or you can also manually create a new Website in Piwik PRO with the URL set to this hostname
 '''  # noqa: E501
                     if self.piwik_sites_ignored
                     else '',
@@ -1715,7 +1690,7 @@ class PiwikHttpBase:
 
 class PiwikHttpUrllib(PiwikHttpBase):
     """
-    Make requests to Piwik.
+    Make requests to Piwik PRO.
     """
 
     class RedirectHandlerWithLogging(urllib.request.HTTPRedirectHandler):
@@ -1733,7 +1708,7 @@ class PiwikHttpUrllib(PiwikHttpBase):
 
     def _call(self, path, args=None, headers=None, url=None, data=None):
         """
-        Make a request to the Piwik site. It is up to the caller to format
+        Make a request to the Piwik PRO site. It is up to the caller to format
         arguments, to embed authentication, etc.
         """
         if url is None:
@@ -1821,12 +1796,12 @@ class PiwikHttpUrllib(PiwikHttpBase):
             return json.loads(result)
         except ValueError:
             raise urllib.error.URLError(
-                'Piwik returned an invalid response: ' + result.decode("utf-8")
+                'Piwik PRO returned an invalid response: ' + result.decode("utf-8")
             )
 
     def _call_wrapper(self, func, expected_response, on_failure, *args, **kwargs):
         """
-        Try to make requests to Piwik at most PIWIK_FAILURE_MAX_RETRY times.
+        Try to make requests to Piwik PRO at most PIWIK_FAILURE_MAX_RETRY times.
         """
         errors = 0
         while True:
@@ -1909,12 +1884,12 @@ class PiwikHttpUrllib(PiwikHttpBase):
 
 
 # Resolvers
-# A resolver is a class that turns a hostname into a Piwik site ID.
+# A resolver is a class that turns a hostname into a Piwik PRO app ID.
 
 
 class StaticResolver:
     """
-    Always return the same site ID, specified in the configuration.
+    Always return the same app ID, specified in the configuration.
     """
 
     def __init__(self, site_id):
@@ -1927,11 +1902,11 @@ class StaticResolver:
                 site = piwik.auth_call_api('/api/apps/v2/%s' % site_id)
             except urllib.error.URLError as e:
                 if e.code == 404:
-                    logging.debug("cannot get the main URL of this site ID: %s" % site_id)
+                    logging.debug("cannot get the main URL of this App ID: %s" % site_id)
                     self.site_id = None
             else:
                 if site.get('result') == 'error':
-                    fatal_error("cannot get the main URL of this site: %s" % site.get('message'))
+                    fatal_error("cannot get the main URL of this App: %s" % site.get('message'))
 
                 try:
                     self.site_id, self._main_url = _get_site_id_and_url(site)
@@ -1950,7 +1925,7 @@ class StaticResolver:
 
 class DynamicResolver:
     """
-    Use Piwik API to determine the site ID.
+    Use Piwik PRO API to determine the app ID.
     """
 
     def __init__(self):
@@ -1978,7 +1953,7 @@ class DynamicResolver:
 
     def _resolve_when_replay_tracking(self, hit):
         """
-        If parsed site ID found in the _cache['sites'] return site ID and main_url,
+        If parsed app ID found in the _cache['sites'] return app ID and main_url,
         otherwise return (None, None) tuple.
         """
         site_id = hit.args['idsite']
@@ -1987,20 +1962,20 @@ class DynamicResolver:
 
     def _resolve_by_host(self, hit):
         """
-        Returns the site ID and site URL for a hit based on the hostname.
+        Returns the app ID and site URL for a hit based on the hostname.
         """
         try:
             site_id = self._cache[hit.host]
         except KeyError:
-            logging.debug('Site ID for hostname %s not in cache', hit.host)
+            logging.debug('App ID for hostname %s not in cache', hit.host)
             site_id = self._resolve(hit)
-            logging.debug('Site ID for hostname %s: %s', hit.host, site_id)
+            logging.debug('App ID for hostname %s: %s', hit.host, site_id)
             self._cache[hit.host] = site_id
         return (site_id, 'https://' + hit.host)
 
     def resolve(self, hit):
         """
-        Return the site ID from the cache if found, otherwise call _resolve.
+        Return the app ID from the cache if found, otherwise call _resolve.
         If replay_tracking option is enabled, call _resolve_when_replay_tracking.
         """
         if config.options.replay_tracking:
@@ -2023,14 +1998,14 @@ class DynamicResolver:
         ):
             fatal_error(
                 "the selected log format doesn't include the hostname: you must "
-                "specify the Piwik site ID with the --idsite argument "
-                "or host with --hostname argument"
+                "specify the Piwik PRO App ID with the --idsite flag "
+                "or host with --log-hostname flag"
             )
 
 
 class Recorder:
     """
-    A Recorder fetches hits from the Queue and inserts them into Piwik using
+    A Recorder fetches hits from the Queue and inserts them into Piwik Pro using
     the API.
     """
 
@@ -2135,9 +2110,9 @@ class Recorder:
         """
         site_id, main_url = resolver.resolve(hit)
         if site_id is None:
-            # This hit doesn't match any known Piwik site.
+            # This hit doesn't match any known Piwik PRO site.
             if config.options.replay_tracking:
-                stats.piwik_sites_ignored.add('unrecognized site ID %s' % hit.args.get('idsite'))
+                stats.piwik_sites_ignored.add('unrecognized App ID %s' % hit.args.get('idsite'))
             else:
                 try:
                     stats.piwik_sites_ignored.add(hit.host)
@@ -2252,7 +2227,7 @@ class Recorder:
 
     def _record_hits(self, hits, single=False):
         """
-        Inserts several hits into Piwik.
+        Inserts several hits into Piwik PRO.
         """
         hit_count = 0
         if not config.options.dry_run:
@@ -2452,7 +2427,7 @@ class Parser:
         if hit.status[0] in ('4', '5'):
             if config.options.replay_tracking:
                 # process error logs for replay tracking,
-                # since we don't care if piwik error-ed the first time
+                # since we don't care if Piwik PRO error-ed the first time
                 return True
             elif config.options.enable_http_errors:
                 hit.is_error = True
@@ -2968,7 +2943,7 @@ def fatal_error(error, filename=None, lineno=None):
 if __name__ == '__main__':
     try:
         config = Configuration()
-        # The piwik object depends on the config object, so we have to create
+        # The Piwik PRO object depends on the config object, so we have to create
         # it after creating the configuration.
         piwik = PiwikHttpUrllib()
         # The init_token_auth method may need the piwik option, so we must call
