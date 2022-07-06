@@ -2940,19 +2940,22 @@ def fatal_error(error, filename=None, lineno=None):
     os._exit(1)
 
 
+# Hack to work around usage of globals in this script and tests
+if not os.getenv('PYTEST_SESSION'):
+    config = Configuration()
+    # The Piwik PRO object depends on the config object, so we have to create
+    # it after creating the configuration.
+    piwik = PiwikHttpUrllib()
+    # The init_token_auth method may need the piwik option, so we must call
+    # it after creating the piwik object.
+    config.init_token_auth()
+    stats = Statistics()
+    resolver = config.get_resolver()
+    parser = Parser()
+
+
 if __name__ == '__main__':
     try:
-        config = Configuration()
-        # The Piwik PRO object depends on the config object, so we have to create
-        # it after creating the configuration.
-        piwik = PiwikHttpUrllib()
-        # The init_token_auth method may need the piwik option, so we must call
-        # it after creating the piwik object.
-        config.init_token_auth()
-        stats = Statistics()
-        resolver = config.get_resolver()
-        parser = Parser()
         main()
-        sys.exit(0)
     except KeyboardInterrupt:
         pass

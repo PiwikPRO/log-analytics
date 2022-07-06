@@ -1,5 +1,6 @@
 ---
-name: Unit tests
+name: Build package using various python versions
+
 "on":
   pull_request:
 
@@ -17,14 +18,12 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           architecture: x64
-      - name: Install Pytest
-        run: |
-          pip install --upgrade pip
-          pip install pytest
-          python --version ; pip --version ; pytest --version
-        shell: bash
-      - name: Run Tests
-        run: |
-          cd tests
-          ./run_tests.sh
-        shell: bash
+
+      - name: Install poetry
+        uses: abatilo/actions-poetry@v2.0.0
+
+      - name: Build and install poetry package
+        run: poetry build && poetry install
+
+      - name: Verify, that import_logs is properly called
+        run: poetry run piwik_pro_log_analytics --help
