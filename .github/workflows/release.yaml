@@ -1,10 +1,12 @@
-on:
+---
+"on":
+  pull_request:
   push:
     tags: ["**"]
 
 name: Release
 jobs:
-  binary:
+  docker:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -29,3 +31,30 @@ jobs:
         with:
           dtools-token: ${{ secrets.DTOOLS_TOKEN }}
           image: "framework/log-analytics"
+
+  pypi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+          architecture: x64
+
+      - name: Install poetry
+        uses: abatilo/actions-poetry@v2.0.0
+
+      - name: Update package version to current tag
+        if: ${{ github.ref_type == 'tag' }}
+        run: sed -i -e '/version =/ s/= .*/= "${{ github.ref_name }}"/' pyproject.toml
+
+      - name: Build and install poetry package
+        run: poetry build && poetry install
+
+      - name: Push the package to PyPi
+        if: ${{ github.ref_type == 'tag' }}
+        run: poetry publish --username __token__ --password ${{ secrets.PYPI_TOKEN }}
