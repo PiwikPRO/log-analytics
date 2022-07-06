@@ -1,0 +1,19 @@
+on:
+  pull_request:
+
+name: Linters
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+
+      - name: Run linters
+        uses: PiwikPRO/actions/python/lint@master
+        with:
+          use-black: true
+          # TODO: Disabled, fails on mccabe
+          use-flake: false
+          use-isort: true
