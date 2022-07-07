@@ -1,31 +1,70 @@
-on:
+---
+"on":
+  pull_request:
   push:
     tags: ["**"]
 
+
 name: Release
 jobs:
-  binary:
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Login to Github Packages
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get docker metadata
+        id: meta
+        uses: crazy-max/ghaction-docker-meta@v1
+        with:
+          images: ghcr.io/PiwikPRO/log-analytics
+
+      - name: Build image and push to GCR
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          push: ${{ github.ref_type == 'tag' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  pypi:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Check out repository code
         uses: actions/checkout@v2
 
-      - name: Download dtools
-        uses: PiwikPRO/actions/dtools/setup@master
+      - name: Set up Python
+        uses: actions/setup-python@v2
         with:
-          dtools-token: ${{ secrets.DTOOLS_TOKEN }}
-          reporeader-private-key: ${{ secrets.REPOREADER_PRIVATE_KEY }}
-          reporeader-application-id: ${{ secrets.REPOREADER_APPLICATION_ID }}
+          python-version: ${{ matrix.python-version }}
+          architecture: x64
 
-      - name: Build docker image
-        env:
-          PP_DTOOLS_TOKEN: ${{ secrets.DTOOLS_TOKEN }}
-        run: docker build -f Dockerfile . -t "framework/log-analytics"
+      - name: Install poetry
+        uses: abatilo/actions-poetry@v2.0.0
 
-      - name: Push docker image
-        uses: PiwikPRO/actions/dtools/push@master
+      - name: Update package version to current tag
         if: ${{ github.ref_type == 'tag' }}
-        with:
-          dtools-token: ${{ secrets.DTOOLS_TOKEN }}
-          image: "framework/log-analytics"
+        run: sed -i -e '/version =/ s/= .*/= "${{ github.ref_name }}"/' pyproject.toml
+
+      - name: Build and install poetry package
+        run: poetry build && poetry install
+
+      - name: Push the package to PyPi
+        if: ${{ github.ref_type == 'tag' }}
+        run: poetry publish --username __token__ --password ${{ secrets.PYPI_TOKEN }}
