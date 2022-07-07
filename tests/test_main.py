@@ -5,7 +5,7 @@ import os
 import re
 from collections import OrderedDict
 
-import import_logs
+from piwik_pro_log_analytics import import_logs
 
 
 # utility functions

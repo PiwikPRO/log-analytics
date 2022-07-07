@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [5.1.0] - 2022-06-08
+
+- Removed Piwik OSS / Matomo branding
+- Prepared PyPi upload automation
+
 ## [4.1.1] - 2022-02-09
 
 - PPPSYS-28606 Fixing --dry-run
