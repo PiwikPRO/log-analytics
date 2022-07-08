@@ -15,6 +15,5 @@ jobs:
         uses: PiwikPRO/actions/python/lint@master
         with:
           use-black: true
-          # TODO: Disabled, fails on mccabe
-          use-flake: false
+          use-flake: true
           use-isort: true
