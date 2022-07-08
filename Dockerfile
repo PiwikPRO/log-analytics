@@ -9,4 +9,4 @@ RUN ln -s /usr/bin/python3.8 /usr/bin/python \
 RUN wget https://github.com/Azure/azure-storage-fuse/releases/download/blobfuse-1.4.1/blobfuse-1.4.1-ubuntu-20.04-x86_64.deb \
   && dpkg -i blobfuse-1.4.1-ubuntu-20.04-x86_64.deb
 
-ADD import_logs.py /usr/local/bin
+ADD piwik_pro_log_analytics/import_logs.py /usr/local/bin
