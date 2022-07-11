@@ -654,11 +654,12 @@ class Configuration:
             ),
         )
         parser.add_argument(
-            "--debug-force-one-hit-every-Ns",
-            dest="force_one_action_interval",
+            "--sleep-between-requests-ms",
+            dest="sleep_between_requests_ms",
             default=False,
             type=float,
-            help="Debug option that will force each recorder to record one hit every N secs.",
+            help="Option that will force each recorder to sleep X milliseconds between "
+            "tracker requests",
         )
         parser.add_argument(
             "--url",
@@ -920,7 +921,7 @@ class Configuration:
         parser.add_argument(
             "--recorder-max-payload-size",
             dest="recorder_max_payload_size",
-            default=200,
+            default=95,
             type=int,
             help=(
                 "Maximum number of log entries to record in one tracking request (default:"
@@ -960,12 +961,12 @@ class Configuration:
             help="Log files encoding (default: %(default)s)",
         )
         parser.add_argument(
-            "--enable-bulk-tracking",
-            dest="use_bulk_tracking",
+            "--disable-bulk-tracking",
+            dest="disable_bulk_tracking",
             default=False,
             action="store_true",
             help=(
-                "Enables use of bulk tracking so recorders record multiple events with one request"
+                "Disables use of bulk tracking so recorders record single with every request"
                 " to the tracker."
             ),
         )
@@ -1049,7 +1050,7 @@ class Configuration:
                 " to parse fields the importer does not natively recognize and then use one of the"
                 " --regex-group-to-XXX-cvar options to track the field in a custom variable. For"
                 " example, specifying --w3c-field-regex=sc-win32-status=(?P<win32_status>\\S+)"
-                " --regex-group-to-page-cvar=\"win32_status=Windows Status Code\" will track the"
+                ' --regex-group-to-page-cvar="win32_status=Windows Status Code" will track the'
                 " sc-win32-status IIS field in the 'Windows Status Code' custom variable. Regexes"
                 " must contain a named group."
             ),
@@ -1098,7 +1099,7 @@ class Configuration:
                 "Track an attribute through a custom variable with visit scope instead of through"
                 " Piwik PRO's normal approach. For example, to track usernames as a custom variable"
                 " instead of through the uid tracking parameter, supply"
-                " --regex-group-to-visit-cvar=\"userid=User Name\". This will track usernames in a"
+                ' --regex-group-to-visit-cvar="userid=User Name". This will track usernames in a'
                 " custom variable named 'User Name'. The list of available regex groups can be"
                 " found in the documentation for --log-format-regex (additional regex groups you"
                 " may have defined in --log-format-regex can also be used)."
@@ -1114,7 +1115,7 @@ class Configuration:
                 "Track an attribute through a custom variable with page scope instead of through"
                 " Piwik PRO's normal approach. For example, to track usernames as a custom variable"
                 " instead of through the uid tracking parameter, supply"
-                " --regex-group-to-page-cvar=\"userid=User Name\". This will track usernames in a"
+                ' --regex-group-to-page-cvar="userid=User Name". This will track usernames in a'
                 " custom variable named 'User Name'. The list of available regex groups can be"
                 " found in the documentation for --log-format-regex (additional regex groups you"
                 " may have defined in --log-format-regex can also be used)."
@@ -2194,7 +2195,7 @@ class Recorder:
         self.queue = queue.Queue(maxsize=2)
 
         # if bulk tracking disabled, make sure we can store hits outside of the Queue
-        if not config.options.use_bulk_tracking:
+        if config.options.disable_bulk_tracking:
             self.unrecorded_hits = []
 
     @classmethod
@@ -2205,8 +2206,9 @@ class Recorder:
         for i in range(recorder_count):
             recorder = Recorder()
             cls.recorders.append(recorder)
-
-            run = recorder._run_bulk if config.options.use_bulk_tracking else recorder._run_single
+            run = recorder._run_bulk
+            if config.options.disable_bulk_tracking:
+                run = recorder._run_single
             t = threading.Thread(target=run)
 
             t.daemon = True
@@ -2237,6 +2239,7 @@ class Recorder:
 
     def _run_bulk(self):
         while True:
+            self._throttle()
             try:
                 hits = self.queue.get()
             except Exception:
@@ -2255,9 +2258,7 @@ class Recorder:
 
     def _run_single(self):
         while True:
-            if config.options.force_one_action_interval is not False:
-                time.sleep(config.options.force_one_action_interval)
-
+            self._throttle()
             self.unrecorded_hits = self.queue.get()
             for hit in self.unrecorded_hits:
                 try:
@@ -2265,6 +2266,10 @@ class Recorder:
                 except PiwikHttpBase.Error as e:
                     fatal_error(e, hit.filename, hit.lineno)
             self.queue.task_done()
+
+    def _throttle(self):
+        if config.options.sleep_between_requests_ms is not False:
+            time.sleep(config.options.sleep_between_requests_ms / 1000)
 
     def _wait_empty(self):
         """
@@ -2381,7 +2386,6 @@ class Recorder:
                         logging.debug("tracker response:\n%s" % response)
 
                 except PiwikHttpBase.Error as e:
-                    # if the server returned 400 code, BulkTracking may not be enabled
                     if e.code == 400:
                         fatal_error(
                             "Server returned status 400 (Bad Request).",
@@ -3069,7 +3073,7 @@ def fatal_error(error, filename=None, lineno=None):
     if filename and lineno is not None:
         print(
             'You can restart the import of "%s" from the point it failed by '
-            'specifying --skip=%d on the command line.\n' % (filename, lineno),
+            "specifying --skip=%d on the command line.\n" % (filename, lineno),
             file=sys.stderr,
         )
     os._exit(1)

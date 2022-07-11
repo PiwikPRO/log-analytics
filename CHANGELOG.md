@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+
+## [5.2.0] - 2022-07-11
+
+- Tuned default parameters for better performance
+
 ## [5.1.0] - 2022-06-08
 
 - Removed Piwik OSS / Matomo branding
