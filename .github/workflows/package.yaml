@@ -1,29 +1,24 @@
----
 name: Build package using various python versions
-
-"on":
-  pull_request:
-
+on:
+    pull_request:
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.6', '3.7', '3.8', '3.9', '3.10']
-    name: Tests (Python ${{ matrix.python-version }})
-    steps:
-      - uses: actions/checkout@v2
-      - name: Set up Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ matrix.python-version }}
-          architecture: x64
-
-      - name: Install poetry
-        uses: abatilo/actions-poetry@c1aba0c402ae0d96fbb6d94050592a56b202009f
-
-      - name: Build and install poetry package
-        run: poetry build && poetry install
-
-      - name: Verify, that import_logs is properly called
-        run: poetry run piwik_pro_log_analytics --help
+    build:
+        runs-on: ubuntu-latest
+        strategy:
+            matrix:
+                python-version: ['3.6', '3.7', '3.8', '3.9', '3.10']
+        name: Tests (Python ${{ matrix.python-version }})
+        steps:
+          - uses: actions/checkout@v2
+          - name: Set up Python
+            uses: actions/setup-python@v2
+            with:
+                python-version: ${{ matrix.python-version }}
+                architecture: x64
+          - name: Install poetry
+            uses: abatilo/actions-poetry@c1aba0c402ae0d96fbb6d94050592a56b202009f
+          - name: Build and install poetry package
+            run: poetry build && poetry install
+          - name: Verify, that import_logs is properly called
+            run: poetry run piwik_pro_log_analytics --help
+        timeout-minutes: 30
