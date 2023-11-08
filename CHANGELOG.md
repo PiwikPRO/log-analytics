@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [5.2.1] - 2023-11-09
+
+- PPPSYS-44518 Converted int values like `gt_ms` to strings
+- DEVOPS-5661 Missing timeouts for gha workflow
 
 ## [5.2.0] - 2022-07-11
 

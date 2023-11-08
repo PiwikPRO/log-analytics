@@ -119,7 +119,6 @@ class TestFormatDetection:
         assert groups["ip"] == "0:0:0:0:0:ffff:7b2d:4359"
 
     def test_format_detection(self):
-
         for format_name in import_logs.FORMATS.keys():
             # w3c extended tested by iis and netscaler log files; amazon cloudfront tested later
             if (
@@ -259,20 +258,20 @@ def test_replay_tracking_seconds_to_add_to_date():
 
     hits = [hit.args for hit in import_logs.Recorder.recorders]
 
-    assert hits[0]["_idts"] == 1360047661 + 3600
-    assert hits[0]["_viewts"] == 1360047661 + 3600
-    assert hits[0]["_refts"] == 1360047661 + 3600
-    assert hits[0]["_ects"] == 1360047634 + 3600
+    assert hits[0]["_idts"] == str(1360047661 + 3600)
+    assert hits[0]["_viewts"] == str(1360047661 + 3600)
+    assert hits[0]["_refts"] == str(1360047661 + 3600)
+    assert hits[0]["_ects"] == str(1360047634 + 3600)
 
-    assert hits[1]["_idts"] == 1360047661 + 3600
-    assert hits[1]["_viewts"] == 1360047661 + 3600
-    assert hits[1]["_refts"] == 1360047661 + 3600
-    assert hits[1]["_ects"] == 1360047534 + 3600
+    assert hits[1]["_idts"] == str(1360047661 + 3600)
+    assert hits[1]["_viewts"] == str(1360047661 + 3600)
+    assert hits[1]["_refts"] == str(1360047661 + 3600)
+    assert hits[1]["_ects"] == str(1360047534 + 3600)
 
-    assert hits[2]["_idts"] == 1360047661 + 3600
-    assert hits[2]["_viewts"] == 1360047661 + 3600
-    assert hits[2]["_refts"] == 1360047661 + 3600
-    assert hits[2]["_ects"] == 1360047614 + 3600
+    assert hits[2]["_idts"] == str(1360047661 + 3600)
+    assert hits[2]["_viewts"] == str(1360047661 + 3600)
+    assert hits[2]["_refts"] == str(1360047661 + 3600)
+    assert hits[2]["_ects"] == str(1360047614 + 3600)
 
 
 def test_replay_tracking_arguments():
@@ -714,7 +713,7 @@ def test_shoutcast_parsing():
     assert hits[0]["is_download"] is False
     assert hits[0]["referrer"] == ""
     assert hits[0]["args"] == {}
-    assert hits[0]["generation_time_milli"] == 1000.0
+    assert hits[0]["generation_time_milli"] == 1000
     assert hits[0]["host"] == "foo"
     assert hits[0]["filename"] == "logs/shoutcast.log"
     assert hits[0]["is_redirect"] is False
@@ -754,7 +753,7 @@ def test_splitted_date_and_time_parsing():
     assert hits[0]["is_download"] is False
     assert hits[0]["referrer"] == ""
     assert hits[0]["args"] == {}
-    assert hits[0]["generation_time_milli"] == 1000.0
+    assert hits[0]["generation_time_milli"] == 1000
     assert hits[0]["host"] == "foo"
     assert hits[0]["filename"] == "logs/splitted_date_and_time.log"
     assert hits[0]["is_redirect"] is False
@@ -1458,7 +1457,6 @@ def test_bz2_parsing():
 
 
 def test_static_resolver_with_idsite():
-
     import_logs.piwik = Piwik()
     import_logs.stats = import_logs.Statistics()
     import_logs.resolver = import_logs.StaticResolver("194edb22-394a-48e5-aed8-0797ab29d2ae")
