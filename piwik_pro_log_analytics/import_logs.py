@@ -239,7 +239,6 @@ class RegexFormat(BaseFormat):
 
 
 class W3cExtendedFormat(RegexFormat):
-
     FIELDS_LINE_PREFIX = "#Fields: "
     REGEX_UNKNOWN_FIELD = r'(?:".*?"|\S+)'
 
@@ -336,7 +335,6 @@ class W3cExtendedFormat(RegexFormat):
         self.regex = re.compile(full_regex)
 
     def _configure_expected_fields(self):
-
         expected_fields = type(
             self
         ).fields.copy()  # turn custom field mapping into field => regex mapping
@@ -384,7 +382,6 @@ class W3cExtendedFormat(RegexFormat):
 
 
 class IisFormat(W3cExtendedFormat):
-
     fields = W3cExtendedFormat.fields.copy()
     fields.update(
         {
@@ -405,7 +402,6 @@ class IisFormat(W3cExtendedFormat):
 
 
 class IncapsulaW3CFormat(W3cExtendedFormat):
-
     # use custom unknown field regex to make resulting regex much simpler
     REGEX_UNKNOWN_FIELD = r'".*?"'
 
@@ -438,7 +434,6 @@ class IncapsulaW3CFormat(W3cExtendedFormat):
 
 
 class ShoutcastFormat(W3cExtendedFormat):
-
     fields = W3cExtendedFormat.fields.copy()
     fields.update(
         {
@@ -461,7 +456,6 @@ class ShoutcastFormat(W3cExtendedFormat):
 
 
 class AmazonCloudFrontFormat(W3cExtendedFormat):
-
     fields = W3cExtendedFormat.fields.copy()
     fields.update(
         {
@@ -2154,7 +2148,7 @@ class MiscHitItemsRule:
         args = initial_args or {}
 
         if args_config.hit.generation_time_milli > 0:
-            args["gt_ms"] = int(args_config.hit.generation_time_milli)
+            args["gt_ms"] = str(int(args_config.hit.generation_time_milli))
 
         if args_config.hit.event_category and args_config.hit.event_action:
             args["e_c"] = args_config.hit.event_category
@@ -2164,7 +2158,7 @@ class MiscHitItemsRule:
                 args["e_n"] = args_config.hit.event_name
 
         if args_config.hit.length:
-            args["bw_bytes"] = args_config.hit.length
+            args["bw_bytes"] = str(args_config.hit.length)
 
         # convert custom variable args to JSON
         if "cvar" in args and not isinstance(args["cvar"], str):
@@ -2372,7 +2366,6 @@ class Recorder:
 
             if hit_count > 0:
                 try:
-
                     response = piwik.call(
                         config.options.piwik_tracker_endpoint_path,
                         args=args,
@@ -2713,7 +2706,6 @@ class Parser:
             logging.debug("Filtered line out (%s): %s" % (reason, line))
 
     def _get_file_and_filename(self, filename):
-
         if filename == "-":
             return "(stdin)", sys.stdin
         else:
@@ -2741,7 +2733,6 @@ class Parser:
 
     # Returns True if format was configured
     def _configure_format(self, file):
-
         if config.format:
             # The format was explicitly specified.
             format = config.format
@@ -2996,7 +2987,7 @@ class Parser:
                 if config.options.seconds_to_add_to_date:
                     for param in ["_idts", "_viewts", "_ects", "_refts"]:
                         if param in hit.args:
-                            hit.args[param] = (
+                            hit.args[param] = str(
                                 int(hit.args[param]) + config.options.seconds_to_add_to_date
                             )
 
