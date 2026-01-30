@@ -9,9 +9,9 @@ jobs:
                 python-version: ['3.6', '3.7', '3.8', '3.9', '3.10']
         name: Tests (Python ${{ matrix.python-version }})
         steps:
-          - uses: actions/checkout@v2
+          - uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5  # v2
           - name: Set up Python
-            uses: actions/setup-python@v4
+            uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c  # v4
             with:
                 python-version: ${{ matrix.python-version }}
                 architecture: x64
