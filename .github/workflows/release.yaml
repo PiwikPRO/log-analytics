@@ -1,70 +1,76 @@
 ---
 "on":
-  pull_request:
-  push:
-    tags: ["**"]
-
+    pull_request:
+    push:
+        tags: ["**"]
 
 name: Release
 jobs:
-  docker:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    timeout-minutes: 20
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
+    docker:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            packages: write
+        timeout-minutes: 20
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        id: buildx
-        uses: docker/setup-buildx-action@f211e3e9ded2d9377c8cadc4489a4e38014bc4c9
+            - name: Set up Docker Buildx
+              id: buildx
+              uses: docker/setup-buildx-action@f211e3e9ded2d9377c8cadc4489a4e38014bc4c9
 
-      - name: Login to Github Packages
-        uses: docker/login-action@dd4fa0671be5250ee6f50aedf4cb05514abda2c7
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+            - name: Login to Github Packages
+              uses: docker/login-action@dd4fa0671be5250ee6f50aedf4cb05514abda2c7
+              with:
+                  registry: ghcr.io
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get docker metadata
-        id: meta
-        uses: docker/metadata-action@9be43f076db7f0f4ac30d81183fc9d956b9e9eb6
-        with:
-          images: ghcr.io/PiwikPRO/log-analytics
+            - name: Get docker metadata
+              id: meta
+              uses: docker/metadata-action@9be43f076db7f0f4ac30d81183fc9d956b9e9eb6
+              with:
+                  images: ghcr.io/PiwikPRO/log-analytics
 
-      - name: Build image and push to GCR
-        uses: docker/build-push-action@ac9327eae2b366085ac7f6a2d02df8aa8ead720a
-        with:
-          context: .
-          push: ${{ github.ref_type == 'tag' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+            - name: Build image and push to GCR
+              uses: docker/build-push-action@ac9327eae2b366085ac7f6a2d02df8aa8ead720a
+              with:
+                  context: .
+                  push: ${{ github.ref_type == 'tag' }}
+                  tags: ${{ steps.meta.outputs.tags }}
+                  labels: ${{ steps.meta.outputs.labels }}
 
-  pypi:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Check out repository code
-        uses: actions/checkout@v2
+    pypi:
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        steps:
+            - name: Check out repository code
+              uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ matrix.python-version }}
-          architecture: x64
+            - name: Set up Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.12"
+                  architecture: x64
 
-      - name: Install poetry
-        uses: abatilo/actions-poetry@c1aba0c402ae0d96fbb6d94050592a56b202009f
+            - name: Install uv
+              uses: astral-sh/setup-uv@eb1897b8dc4b5d5bfe39a428a8f2304605e0983c
+              with:
+                  version: "latest"
+                  python-version: "3.12"
+                  enable-cache: true
+                  cache-dependency-glob: |
+                      pyproject.toml
+                      uv.lock
 
-      - name: Update package version to current tag
-        if: ${{ github.ref_type == 'tag' }}
-        run: sed -i -e '/version =/ s/= .*/= "${{ github.ref_name }}"/' pyproject.toml
+            - name: Update package version to current tag
+              if: ${{ github.ref_type == 'tag' }}
+              run: sed -i -e '/^version =/ s/= .*/= "${{ github.ref_name }}"/' pyproject.toml
 
-      - name: Build and install poetry package
-        run: poetry build && poetry install
+            - name: Build distributions
+              run: uv build
 
-      - name: Push the package to PyPi
-        if: ${{ github.ref_type == 'tag' }}
-        run: poetry publish --username __token__ --password ${{ secrets.PYPI_TOKEN }}
+            - name: Push the package to PyPI
+              if: ${{ github.ref_type == 'tag' }}
+              run: uv publish --token ${{ secrets.PYPI_TOKEN }}

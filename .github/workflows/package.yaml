@@ -1,6 +1,6 @@
 name: Build package using various python versions
 on:
-    pull_request:
+  pull_request:
 jobs:
     build:
         runs-on: ubuntu-latest
@@ -9,16 +9,18 @@ jobs:
                 python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13', '3.14']
         name: Tests (Python ${{ matrix.python-version }})
         steps:
-          - uses: actions/checkout@v2
-          - name: Set up Python
-            uses: actions/setup-python@v4
+          - uses: actions/checkout@v4
+          - name: Install uv
+            uses: astral-sh/setup-uv@eb1897b8dc4b5d5bfe39a428a8f2304605e0983c
             with:
+                version: "latest"
                 python-version: ${{ matrix.python-version }}
-                architecture: x64
-          - name: Install poetry
-            uses: abatilo/actions-poetry@c1aba0c402ae0d96fbb6d94050592a56b202009f
-          - name: Build and install poetry package
-            run: poetry build && poetry install
-          - name: Verify, that import_logs is properly called
-            run: poetry run piwik_pro_log_analytics --help
+                enable-cache: true
+                cache-dependency-glob: |
+                    pyproject.toml
+                    uv.lock
+          - name: Sync environment and build package
+            run: uv sync --frozen --no-dev && uv build
+          - name: Verify import_logs CLI
+            run: uv run piwik_pro_log_analytics --help
         timeout-minutes: 30
