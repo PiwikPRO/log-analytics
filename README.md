@@ -4,7 +4,7 @@ Import your web server logs to Piwik PRO.
 
 ## Requirements
 
-* Python 3.6+.
+* Python 3.8+.
 * Piwik PRO >= 16+, all the versions, including Cloud, Core and On-Premises are supported
 
 

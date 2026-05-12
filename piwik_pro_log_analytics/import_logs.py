@@ -11,9 +11,9 @@
 
 import sys
 
-if sys.version_info[0] != 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 6):
+if sys.version_info[0] != 3 or sys.version_info < (3, 8):
     print("The log importer does not support older python versions.")
-    print("Please use Python 3.6+")
+    print("Please use Python 3.8+")
     sys.exit(1)
 
 import argparse

@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- PPPSYS-56851 Extended CI Python matrix up to 3.14
+- PPPSYS-56851 Require Python 3.8 or newer (removed 3.6 and 3.7); extend CI Python matrix through 3.14
 
 ## [5.2.1] - 2023-11-09
 
