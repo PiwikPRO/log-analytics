@@ -5,7 +5,7 @@ version = "0.0.1"
 description = "Allows importing common web server log formats (nginx, apache, iss and more) directly to Piwik PRO. It's Free Software available under GPLv3 license, available on GitHub"
 readme = "README.md"
 requires-python = ">=3.8"
-license = "GPL-3.0-or-later"
+license = { text = "GPL-3.0-or-later" }
 authors = [{ name = "Piwik PRO", email = "kosto@piwik.pro" }]
 
 [project.scripts]

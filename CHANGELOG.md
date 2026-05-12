@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - PPPSYS-56851 Require Python 3.8 or newer (removed 3.6 and 3.7); extend CI Python matrix through 3.14
+- PPPSYS-56851 Migrated packaging and CI from Poetry to uv (PEP 621, setuptools, committed `uv.lock`); PyPI releases use `uv publish`.
 
 ## [5.2.1] - 2023-11-09
 
