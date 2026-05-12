@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- PPPSYS-56851 Extended CI Python matrix up to 3.14
+
 ## [5.2.1] - 2023-11-09
 
 - PPPSYS-44518 Converted int values like `gt_ms` to strings
