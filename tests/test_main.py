@@ -48,9 +48,7 @@ def use_ipv6_in_file(path):
     file.close()
 
     if "1.2.3.4" not in contents:
-        raise RuntimeError(
-            "could not find ipv4 IP in " + path + ", make sure the IP 1.2.3.4 is used for tests"
-        )
+        raise RuntimeError("could not find ipv4 IP in " + path + ", make sure the IP 1.2.3.4 is used for tests")
 
     contents = contents.replace("1.2.3.4", "0:0:0:0:0:ffff:7b2d:4359")
 
@@ -299,9 +297,7 @@ def test_replay_tracking_arguments():
     assert hits[0]["realp"] == "0"
     assert hits[0]["wma"] == "1"
     assert hits[0]["_idvc"] == "1"
-    assert (
-        hits[0]["action_name"] == "Clearcode - Web and Mobile Development | Technology With Passion"
-    )
+    assert hits[0]["action_name"] == "Clearcode - Web and Mobile Development | Technology With Passion"
     assert hits[0]["cookie"] == "1"
     assert hits[0]["rec"] == "1"
     assert hits[0]["qt"] == "1"
@@ -327,17 +323,11 @@ def test_replay_tracking_arguments():
     assert hits[1]["realp"] == "0"
     assert hits[1]["wma"] == "1"
     assert hits[1]["_idvc"] == "1"
-    assert (
-        hits[1]["action_name"]
-        == "AdviserBrief - Track Your Investments and Plan Financial Future | Clearcode"
-    )
+    assert hits[1]["action_name"] == "AdviserBrief - Track Your Investments and Plan Financial Future | Clearcode"
     assert hits[1]["cookie"] == "1"
     assert hits[1]["rec"] == "1"
     assert hits[1]["qt"] == "1"
-    assert (
-        hits[1]["url"]
-        == "http://clearcode.cc/case/adviserbrief-track-your-investments-and-plan-financial-future/"
-    )
+    assert hits[1]["url"] == "http://clearcode.cc/case/adviserbrief-track-your-investments-and-plan-financial-future/"
     assert hits[1]["h"] == "17"
     assert hits[1]["m"] == "31"
     assert hits[1]["s"] == "40"
@@ -359,10 +349,7 @@ def test_replay_tracking_arguments():
     assert hits[2]["realp"] == "0"
     assert hits[2]["wma"] == "1"
     assert hits[2]["_idvc"] == "1"
-    assert (
-        hits[2]["action_name"]
-        == "ATL Apps - American Tailgating League Mobile Android IOS Games | Clearcode"
-    )
+    assert hits[2]["action_name"] == "ATL Apps - American Tailgating League Mobile Android IOS Games | Clearcode"
     assert hits[2]["cookie"] == "1"
     assert hits[2]["rec"] == "1"
     assert hits[2]["qt"] == "1"
@@ -405,8 +392,7 @@ def check_ncsa_extended_groups(groups):
 
     assert groups["referrer"] == "-"
     assert (
-        groups["user_agent"]
-        == "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/535.11 (KHTML, like Gecko)"
+        groups["user_agent"] == "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/535.11 (KHTML, like Gecko)"
         " Chrome/17.0.963.56 Safari/535.11"
     )
 
@@ -429,10 +415,7 @@ def check_iis_groups(groups):
     assert groups["query_string"] == "topCat1=divinity&submit=Search"
     assert groups["ip"] == "1.2.3.4"
     assert groups["referrer"] == "-"
-    assert (
-        groups["user_agent"]
-        == "Mozilla/5.0+(X11;+U;+Linux+i686;+en-US;+rv:1.9.2.7)+Gecko/20100722+Firefox/3.6.7"
-    )
+    assert groups["user_agent"] == "Mozilla/5.0+(X11;+U;+Linux+i686;+en-US;+rv:1.9.2.7)+Gecko/20100722+Firefox/3.6.7"
     assert groups["status"] == "200"
     assert groups["length"] == "27028"
     assert groups["host"] == "example.com"
@@ -469,8 +452,7 @@ def check_s3_groups(groups):
     assert groups["length"] == "368"
     assert groups["referrer"] == "-"
     assert (
-        groups["user_agent"]
-        == "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/535.11 (KHTML, like Gecko)"
+        groups["user_agent"] == "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/535.11 (KHTML, like Gecko)"
         " Chrome/17.0.963.56 Safari/535.11"
     )
 
@@ -481,8 +463,7 @@ def check_nginx_json_groups(groups):
     assert groups["ip"] == "1.2.3.4"
     assert groups["length"] == 192
     assert (
-        groups["user_agent"]
-        == "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.17 (KHTML, like Gecko)"
+        groups["user_agent"] == "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.17 (KHTML, like Gecko)"
         " Chrome/24.0.1312.57 Safari/537.17"
     )
     assert groups["date"] == "2013-10-10T16:52:00+02:00"
@@ -576,10 +557,7 @@ def test_iis_custom_format():
     assert hits[0]["is_error"] is False
     assert hits[0]["extension"] == "/products/theproduct"
     assert hits[0]["is_download"] is False
-    assert (
-        hits[0]["referrer"]
-        == "http://example.com/Search/SearchResults.pg?informationRecipient.languageCode.c=en"
-    )
+    assert hits[0]["referrer"] == "http://example.com/Search/SearchResults.pg?informationRecipient.languageCode.c=en"
     assert hits[0]["args"] == {"cvar": {1: ["HTTP-method", "GET"]}}
     assert hits[0]["generation_time_milli"] == 109
     assert hits[0]["host"] == "foo"
@@ -593,8 +571,7 @@ def test_iis_custom_format():
     assert hits[0]["is_robot"] is False
     assert hits[0]["full_path"] == "/Products/theProduct"
     assert (
-        hits[0]["user_agent"]
-        == "Mozilla/5.0 (Linux; Android 4.4.4; SM-G900V Build/KTU84P) AppleWebKit/537.36 (KHTML,"
+        hits[0]["user_agent"] == "Mozilla/5.0 (Linux; Android 4.4.4; SM-G900V Build/KTU84P) AppleWebKit/537.36 (KHTML,"
         " like Gecko) Chrome/39.0.2171.59 Mobile Safari/537.36"
     )
 
@@ -682,8 +659,7 @@ def test_netscaler_parsing():
     assert hits[0]["is_robot"] is False
     assert hits[0]["full_path"] == "/Citrix/XenApp/Wan/auth/login.jsp"
     assert (
-        hits[0]["user_agent"]
-        == "Mozilla/4.0+(compatible;+MSIE+7.0;+Windows+NT+5.1;+Trident/4.0;+.NET+CLR+1.1.4322;"
+        hits[0]["user_agent"] == "Mozilla/4.0+(compatible;+MSIE+7.0;+Windows+NT+5.1;+Trident/4.0;+.NET+CLR+1.1.4322;"
         "+.NET+CLR+2.0.50727;+.NET+CLR+3.0.04506.648;+.NET+CLR+3.5.21022)"
     )
 
@@ -807,8 +783,7 @@ def test_elb_parsing():
     assert hits[0]["is_robot"] is False
     assert hits[0]["full_path"] == "/path/index.html"
     assert (
-        hits[0]["user_agent"]
-        == "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/535.11 (KHTML, like Gecko)"
+        hits[0]["user_agent"] == "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/535.11 (KHTML, like Gecko)"
         " Chrome/17.0.963.56 Safari/535.11"
     )
     assert hits[0]["length"] == 57
@@ -853,8 +828,7 @@ def test_alb_parsing():
     assert hits[0]["is_robot"] is False
     assert hits[0]["full_path"] == "/path/index.html"
     assert (
-        hits[0]["user_agent"]
-        == "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/535.11 (KHTML, like Gecko)"
+        hits[0]["user_agent"] == "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/535.11 (KHTML, like Gecko)"
         " Chrome/17.0.963.56 Safari/535.11"
     )
     assert hits[0]["length"] == 24950
@@ -943,8 +917,7 @@ def test_ovh_parsing():
     assert hits[0]["is_robot"] is False
     assert hits[0]["full_path"] == "/"
     assert (
-        hits[0]["user_agent"]
-        == "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/535.11 (KHTML, like Gecko)"
+        hits[0]["user_agent"] == "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/535.11 (KHTML, like Gecko)"
         " Chrome/17.0.963.56 Safari/535.11"
     )
 
@@ -991,8 +964,7 @@ def test_gandi_parsing():
     assert hits[0]["is_robot"] is False
     assert hits[0]["full_path"] == "/"
     assert (
-        hits[0]["user_agent"]
-        == "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/535.11 (KHTML, like Gecko)"
+        hits[0]["user_agent"] == "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/535.11 (KHTML, like Gecko)"
         " Chrome/17.0.963.56 Safari/535.11"
     )
 
@@ -1015,10 +987,7 @@ def test_gandi_parsing():
     assert hits[1]["path"] == "/"
     assert hits[1]["is_robot"] is False
     assert hits[1]["full_path"] == "/"
-    assert (
-        hits[1]["user_agent"]
-        == "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:90.0) Gecko/20100101 Firefox/90.0"
-    )
+    assert hits[1]["user_agent"] == "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:90.0) Gecko/20100101 Firefox/90.0"
 
     assert len(hits) == 2
 
@@ -1064,8 +1033,7 @@ def test_incapsulaw3c_parsing():
     assert hits[0]["is_robot"] is False
     assert hits[0]["full_path"] == "/page.php"
     assert (
-        hits[0]["user_agent"]
-        == "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)"
+        hits[0]["user_agent"] == "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)"
         " Chrome/58.0.3029.110 Safari/537.36"
     )
 
@@ -1089,8 +1057,7 @@ def test_incapsulaw3c_parsing():
     assert hits[1]["is_robot"] is False
     assert hits[1]["full_path"] == "/rss/news"
     assert (
-        hits[1]["user_agent"]
-        == "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.10; rv:45.0) Gecko/20100101"
+        hits[1]["user_agent"] == "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.10; rv:45.0) Gecko/20100101"
         " Thunderbird/45.8.0 Lightning/4.7.8"
     )
 
@@ -1381,9 +1348,7 @@ def test_urlhelper_convert_array_args():
 
     # with multiple inconsistent data strucutres
     # using OrderedDict to make the test deterministic
-    inputdata = OrderedDict(
-        [("abc[key1][3]", 1), ("abc[key1][]", 23), ("ghi[key2][]", 45), ("ghi[key2][abc]", 56)]
-    )
+    inputdata = OrderedDict([("abc[key1][3]", 1), ("abc[key1][]", 23), ("ghi[key2][]", 45), ("ghi[key2][abc]", 56)])
     _test(inputdata, {"abc": {"key1": [23]}, "ghi": {"key2": {"abc": 56}}})
 
 
