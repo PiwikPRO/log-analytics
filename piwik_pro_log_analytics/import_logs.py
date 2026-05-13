@@ -576,6 +576,8 @@ class Configuration:
         pass
 
     piwik_token = None
+    # Process-wide: serializes OAuth token refresh across threads.
+    _token_lock = threading.Lock()
 
     def _create_parser(self):
         """
@@ -1341,10 +1343,12 @@ class Configuration:
             return DynamicResolver()
 
     def init_token_auth(self):
-        self.piwik_token = None
-        if not config.options.replay_tracking:
-            self.piwik_token = self._get_token_auth()
-        logging.debug("Authentication token is: %s", self.piwik_token)
+        # ``replay_tracking`` is read from global ``config`` (tests call this on a bare instance).
+        with self._token_lock:
+            self.piwik_token = None
+            if not config.options.replay_tracking:
+                self.piwik_token = self._get_token_auth()
+            logging.debug("Authentication token is: %s", self.piwik_token)
 
 
 class Statistics:
@@ -1805,12 +1809,10 @@ class PiwikHttpUrllib(PiwikHttpBase):
                 errors += 1
                 if errors == max_attempts:
                     logging.info("Max number of attempts reached, server is unreachable!")
-
                     raise PiwikHttpBase.Error(message, code)
-                else:
-                    logging.info("Retrying request, attempt number %d" % (errors + 1))
 
-                    time.sleep(delay_after_failure)
+                logging.info("Retrying request, attempt number %d" % (errors + 1))
+                time.sleep(delay_after_failure)
 
     def _parse_http_exception(self, e):
         code = None
@@ -1832,11 +1834,14 @@ class PiwikHttpUrllib(PiwikHttpBase):
         try:
             return func(*args, **kwargs)
         except urllib.error.URLError as e:
-            if getattr(e, "code", None) == 401:
-                config.init_token_auth()
-                return func(*args, **kwargs)
-            else:
+            if getattr(e, "code", None) != 401:
                 raise
+            token_before = config.piwik_token
+            config.init_token_auth()
+            # Another thread may have refreshed the token while we waited; retry only if it changed.
+            if config.piwik_token != token_before:
+                return func(*args, **kwargs)
+            raise
 
     def auth_call(self, path, args, headers=None, data=None):
         return self._call_authentication_wrapper(self._call, path, args, headers, data=data)
