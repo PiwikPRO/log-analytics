@@ -20,6 +20,8 @@ Use `uv run tox -e py312` for one version, or `uv run tox -- test_main.py -q` to
 
 If you skip `dev-local`, use `uvx tox` or a globally installed `tox` against this `tox.ini` (install **tox-uv** alongside tox if your default interpreter comes from uv and tox envs fail to start).
 
+Lint and format with [Ruff](https://docs.astral.sh/ruff/) (same style as the Piwik PRO MCP repo): `uv run ruff check .` and `uv run ruff format .` (CI runs `ruff format --check`).
+
 ## Getting started
 
 1. Download this git repository `git clone git@github.com:PiwikPRO/log-analytics.git`. The script uses only python standard library, so no external packages are required. Alternatively you can download our PyPi package - `pip install piwik-pro-log-analytics`.

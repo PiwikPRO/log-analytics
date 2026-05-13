@@ -21,9 +21,36 @@ packages = ["piwik_pro_log_analytics"]
 [tool.uv]
 package = true
 
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+src = ["piwik_pro_log_analytics", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "W",
+    "I",
+    "A",
+    "ERA",
+    "PL",
+    "UP",
+]
+ignore = [
+    "PLR2004",
+    "PLR0913",
+]
+
+# Legacy importer and tests predate stricter pylint-style and pyupgrade rules.
+[tool.ruff.lint.per-file-ignores]
+"piwik_pro_log_analytics/import_logs.py" = ["A", "ERA", "PL", "UP"]
+"tests/**" = ["A", "ERA", "PL", "UP"]
+
 [dependency-groups]
 dev-local = [
     "tox>=4.21",
     "pytest>=7",
     "tox-uv>=1.33.4",
+    "ruff>=0.12.7",
 ]
