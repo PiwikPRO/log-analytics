@@ -7,6 +7,18 @@ Import your web server logs to Piwik PRO.
 * Python 3.10 or newer (3.9 and older are end-of-life).
 * Piwik PRO >= 16+, all the versions, including Cloud, Core and On-Premises are supported
 
+## Local tests
+
+The **`dev-local`** dependency group installs [tox](https://tox.wiki/), [pytest](https://docs.pytest.org/), and [tox-uv](https://github.com/tox-dev/tox-uv) so tox creates each Python environment with **uv** (this avoids broken venvs when a uv-managed CPython is first on `PATH`). **Tox** runs the suite under **Python 3.10–3.14** per `tox.ini` (`py310` … `py314`). There is **no committed `.python-version`** pin; **uv** picks a compatible interpreter for the project `.venv`, and you can add a **local** `.python-version` if you want (the file is **gitignored**).
+
+```bash
+uv sync --group dev-local
+uv run tox
+```
+
+Use `uv run tox -e py312` for one version, or `uv run tox -- test_main.py -q` to forward arguments to pytest (paths are relative to `tests/`, same as `./run_tests.sh`). To call pytest without tox: `cd tests && PYTEST_SESSION=1 uv run pytest` (from the repo root, so log fixtures resolve).
+
+If you skip `dev-local`, use `uvx tox` or a globally installed `tox` against this `tox.ini` (install **tox-uv** alongside tox if your default interpreter comes from uv and tox envs fail to start).
 
 ## Getting started
 
