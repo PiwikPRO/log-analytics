@@ -1439,7 +1439,7 @@ def test_static_resolver_with_idsite():
 
 
 # ---------------------------------------------------------------------------
-# Helpers for OAuth tests
+# Helpers for OAuth / rate-limit tests
 # ---------------------------------------------------------------------------
 
 
@@ -1453,7 +1453,8 @@ def _make_http_error(code, headers=None):
 
 
 def _make_piwik_http():
-    """Return a fresh PiwikHttpUrllib instance."""
+    """Return a fresh PiwikHttpUrllib with shared rate-limit state reset."""
+    import_logs.PiwikHttpUrllib._rate_limit_until = 0.0
     return import_logs.PiwikHttpUrllib()
 
 
@@ -1482,17 +1483,27 @@ def _restore_config(had, old):
 
 
 @contextmanager
-def _import_logs_config(cfg):
-    """Temporarily set ``import_logs.config``."""
+def _import_logs_config(cfg, reset_rate_limit_after=False):
+    """Temporarily set ``import_logs.config``; optionally reset shared 429 clock after."""
     had, old = _set_config(cfg)
     try:
         yield
     finally:
         _restore_config(had, old)
+        if reset_rate_limit_after:
+            import_logs.PiwikHttpUrllib._rate_limit_until = 0.0
+
+
+def _rate_limit_test_config(delay_after_failure, max_attempts=3):
+    """Mock ``config`` for 429 tests; resets shared rate-limit deadline after."""
+    return _import_logs_config(
+        _mock_config(delay_after_failure=delay_after_failure, max_attempts=max_attempts),
+        reset_rate_limit_after=True,
+    )
 
 
 # ---------------------------------------------------------------------------
-# OAuth token refresh
+# OAuth refresh and HTTP 429 handling
 # ---------------------------------------------------------------------------
 
 
@@ -1565,3 +1576,133 @@ def test_call_authentication_wrapper_raises_when_token_unchanged_after_refresh()
             piwik._call_authentication_wrapper(func)
         assert exc_info.value.code == 401
 
+
+def test_call_wrapper_respects_retry_after_header():
+    """429 with numeric Retry-After sets _rate_limit_until to now + header value."""
+    piwik = _make_piwik_http()
+    call_count = [0]
+
+    def func(*a, **kw):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            raise _make_http_error(429, headers={"Retry-After": "30"})
+        return "ok"
+
+    with _rate_limit_test_config(10), patch("piwik_pro_log_analytics.import_logs.time") as mock_time:
+        mock_time.time.side_effect = [0.0, 0.0, 0.0, 31.0]
+        mock_time.sleep = MagicMock()
+        result = piwik._call_wrapper(func, None, None)
+
+        assert result == "ok"
+        assert call_count[0] == 2
+        assert import_logs.PiwikHttpUrllib._rate_limit_until == pytest.approx(30.0, abs=0.1)
+        mock_time.sleep.assert_called_once()
+        sleep_arg = mock_time.sleep.call_args[0][0]
+        assert sleep_arg == pytest.approx(30.0, abs=3.5)  # 30 + up to 10% jitter
+
+
+def test_call_wrapper_falls_back_to_default_delay_without_retry_after():
+    """429 without Retry-After header uses delay_after_failure as the wait."""
+    piwik = _make_piwik_http()
+    call_count = [0]
+
+    def func(*a, **kw):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            raise _make_http_error(429)
+        return "ok"
+
+    with _rate_limit_test_config(7), patch("piwik_pro_log_analytics.import_logs.time") as mock_time:
+        mock_time.time.side_effect = [0.0, 0.0, 0.0, 8.0]
+        mock_time.sleep = MagicMock()
+        result = piwik._call_wrapper(func, None, None)
+
+        assert result == "ok"
+        assert import_logs.PiwikHttpUrllib._rate_limit_until == pytest.approx(7.0, abs=0.1)
+        sleep_arg = mock_time.sleep.call_args[0][0]
+        assert sleep_arg == pytest.approx(7.0, abs=0.8)  # 7 + up to 10% jitter
+
+
+def test_call_wrapper_logs_debug_on_malformed_retry_after(caplog):
+    """Non-numeric Retry-After (e.g. HTTP-date) logs debug and falls back to default delay."""
+    piwik = _make_piwik_http()
+    call_count = [0]
+
+    def func(*a, **kw):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            raise _make_http_error(429, headers={"Retry-After": "Wed, 21 Oct 2025 07:28:00 GMT"})
+        return "ok"
+
+    with (
+        _rate_limit_test_config(5),
+        caplog.at_level(logging.DEBUG),
+        patch("piwik_pro_log_analytics.import_logs.time") as mock_time,
+    ):
+        mock_time.time.side_effect = [0.0, 0.0, 0.0, 6.0]
+        mock_time.sleep = MagicMock()
+        result = piwik._call_wrapper(func, None, None)
+
+        assert result == "ok"
+        assert any("Retry-After" in r.message for r in caplog.records)
+        assert import_logs.PiwikHttpUrllib._rate_limit_until == pytest.approx(5.0, abs=0.1)
+
+
+def test_call_wrapper_429_counts_against_max_attempts():
+    """429 responses exhaust max_attempts and raise PiwikHttpBase.Error."""
+    piwik = _make_piwik_http()
+
+    def func(*a, **kw):
+        raise _make_http_error(429)
+
+    with _rate_limit_test_config(0), patch("piwik_pro_log_analytics.import_logs.time") as mock_time:
+        mock_time.time.return_value = 0.0
+        mock_time.sleep = MagicMock()
+        with pytest.raises(import_logs.PiwikHttpBase.Error) as exc_info:
+            piwik._call_wrapper(func, None, None)
+    assert exc_info.value.code == 429
+
+
+def test_rate_limit_shared_across_workers():
+    """A rate-limit window set by one worker causes other workers to wait."""
+    piwik = _make_piwik_http()
+    import_logs.PiwikHttpUrllib._rate_limit_until = 100.0
+
+    def func(*a, **kw):
+        return "ok"
+
+    with _rate_limit_test_config(1), patch("piwik_pro_log_analytics.import_logs.time") as mock_time:
+        sleep_calls = []
+        mock_time.time.side_effect = [0.0, 101.0]
+        mock_time.sleep = lambda n: sleep_calls.append(n)
+        result = piwik._call_wrapper(func, None, None)
+
+    assert result == "ok"
+    assert len(sleep_calls) == 1, "Worker should have slept once for the rate-limit window"
+    assert sleep_calls[0] == pytest.approx(100.0, abs=11.0)  # 100 + up to 10% jitter
+
+
+def test_rate_limit_until_extended_mid_sleep_is_respected():
+    """If _rate_limit_until is extended while a worker sleeps, the worker re-checks
+    and sleeps again for the remainder."""
+    piwik = _make_piwik_http()
+    import_logs.PiwikHttpUrllib._rate_limit_until = 5.0
+
+    sleep_calls = []
+
+    def extending_sleep(n):
+        sleep_calls.append(n)
+        if len(sleep_calls) == 1:
+            # Another worker extends the deadline while this worker sleeps
+            import_logs.PiwikHttpUrllib._rate_limit_until = 10.0
+
+    def func(*a, **kw):
+        return "ok"
+
+    with _rate_limit_test_config(1), patch("piwik_pro_log_analytics.import_logs.time") as mock_time:
+        mock_time.time.side_effect = [0.0, 0.0, 11.0]
+        mock_time.sleep = extending_sleep
+        result = piwik._call_wrapper(func, None, None)
+
+    assert result == "ok"
+    assert len(sleep_calls) == 2, "Worker should sleep twice: once for original window, once after extension"
