@@ -33,6 +33,7 @@ import logging
 import os
 import os.path
 import queue
+import random
 import re
 import socket
 import ssl
@@ -1665,6 +1666,20 @@ class PiwikHttpUrllib(PiwikHttpBase):
     Make requests to Piwik PRO.
     """
 
+    _rate_limit_until = 0.0
+    _rate_limit_lock = threading.Lock()
+
+    @staticmethod
+    def _wait_until_rate_limit_allows():
+        while True:
+            wait_until = PiwikHttpUrllib._rate_limit_until
+            now = time.time()
+            if wait_until <= now:
+                break
+            # Jitter spreads workers out so they don't all fire at once after the window expires.
+            jitter = random.uniform(0, (wait_until - now) * 0.1)
+            time.sleep(wait_until - now + jitter)
+
     class RedirectHandlerWithLogging(urllib.request.HTTPRedirectHandler):
         """
         Special implementation of HTTPRedirectHandler that logs redirects in debug mode
@@ -1776,6 +1791,7 @@ class PiwikHttpUrllib(PiwikHttpBase):
         """
         errors = 0
         while True:
+            self._wait_until_rate_limit_allows()
             try:
                 response = func(*args, **kwargs)
                 if expected_response is not None and response != expected_response:
@@ -1810,6 +1826,22 @@ class PiwikHttpUrllib(PiwikHttpBase):
                 if errors == max_attempts:
                     logging.info("Max number of attempts reached, server is unreachable!")
                     raise PiwikHttpBase.Error(message, code)
+
+                if code == 429:
+                    wait = delay_after_failure
+                    retry_after = (getattr(e, "headers", None) or {}).get("Retry-After")
+                    if retry_after:
+                        try:
+                            wait = float(retry_after)
+                        except ValueError:
+                            logging.debug(
+                                "Could not parse Retry-After header value %r, using default delay",
+                                retry_after,
+                            )
+                    with PiwikHttpUrllib._rate_limit_lock:
+                        PiwikHttpUrllib._rate_limit_until = max(PiwikHttpUrllib._rate_limit_until, time.time() + wait)
+                    logging.info("Rate limited (429), waiting %.1f seconds before retry", wait)
+                    continue
 
                 logging.info("Retrying request, attempt number %d" % (errors + 1))
                 time.sleep(delay_after_failure)
