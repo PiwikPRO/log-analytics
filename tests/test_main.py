@@ -1,10 +1,18 @@
 # vim: et sw=4 ts=4:
 import datetime
+import io
 import json
+import logging
 import os
 import re
+import threading
+import time
+import urllib.error
 from collections import OrderedDict
+from contextlib import contextmanager
+from unittest.mock import MagicMock, patch
 
+import pytest
 from piwik_pro_log_analytics import import_logs
 
 
@@ -1422,8 +1430,138 @@ def test_bz2_parsing():
 
 
 def test_static_resolver_with_idsite():
-    import_logs.piwik = Piwik()
-    import_logs.stats = import_logs.Statistics()
-    import_logs.resolver = import_logs.StaticResolver("194edb22-394a-48e5-aed8-0797ab29d2ae")
+    with _import_logs_config(_mock_config(replay_tracking=True)):
+        import_logs.piwik = Piwik()
+        import_logs.stats = import_logs.Statistics()
+        import_logs.resolver = import_logs.StaticResolver("194edb22-394a-48e5-aed8-0797ab29d2ae")
 
-    assert "194edb22-394a-48e5-aed8-0797ab29d2ae" in import_logs.stats.piwik_sites
+        assert "194edb22-394a-48e5-aed8-0797ab29d2ae" in import_logs.stats.piwik_sites
+
+
+# ---------------------------------------------------------------------------
+# Helpers for OAuth tests
+# ---------------------------------------------------------------------------
+
+
+def _make_http_error(code, headers=None):
+    """Build a urllib.error.HTTPError with the given status code and optional headers."""
+    e = urllib.error.HTTPError(url="http://example.com", code=code, msg="", hdrs=None, fp=io.BytesIO(b""))
+    e.code = code
+    if headers is not None:
+        e.headers = headers
+    return e
+
+
+def _make_piwik_http():
+    """Return a fresh PiwikHttpUrllib instance."""
+    return import_logs.PiwikHttpUrllib()
+
+
+def _mock_config(delay_after_failure=0, max_attempts=3, replay_tracking=False):
+    """Return a MagicMock that satisfies config.options accesses in _call_wrapper."""
+    cfg = MagicMock()
+    cfg.options.delay_after_failure = delay_after_failure
+    cfg.options.max_attempts = max_attempts
+    cfg.options.replay_tracking = replay_tracking
+    return cfg
+
+
+def _set_config(new_config):
+    """Set import_logs.config, returning (had_config, old_config) for restore."""
+    had = hasattr(import_logs, "config")
+    old = getattr(import_logs, "config", None)
+    import_logs.config = new_config
+    return had, old
+
+
+def _restore_config(had, old):
+    if had:
+        import_logs.config = old
+    elif hasattr(import_logs, "config"):
+        delattr(import_logs, "config")
+
+
+@contextmanager
+def _import_logs_config(cfg):
+    """Temporarily set ``import_logs.config``."""
+    had, old = _set_config(cfg)
+    try:
+        yield
+    finally:
+        _restore_config(had, old)
+
+
+# ---------------------------------------------------------------------------
+# OAuth token refresh
+# ---------------------------------------------------------------------------
+
+
+def test_init_token_auth_no_concurrent_fetches():
+    """Two threads calling init_token_auth() concurrently must not fetch in parallel —
+    the lock should serialize them so at most one fetch is in-flight at a time."""
+    concurrent_count = [0]
+    max_concurrent = [0]
+
+    def slow_get_token(self):
+        concurrent_count[0] += 1
+        max_concurrent[0] = max(max_concurrent[0], concurrent_count[0])
+        time.sleep(0.05)  # simulate network latency
+        concurrent_count[0] -= 1
+        return {"token_type": "Bearer", "access_token": "tok"}
+
+    with _import_logs_config(_mock_config()):
+        with patch.object(import_logs.Configuration, "_get_token_auth", slow_get_token):
+            cfg = import_logs.Configuration.__new__(import_logs.Configuration)
+            cfg.piwik_token = None
+            t1 = threading.Thread(target=cfg.init_token_auth)
+            t2 = threading.Thread(target=cfg.init_token_auth)
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
+
+        assert max_concurrent[0] == 1, "Fetches must not overlap — max concurrent was %d" % max_concurrent[0]
+        assert cfg.piwik_token is not None
+
+
+def test_call_authentication_wrapper_retries_on_401_when_token_refreshed():
+    """On 401, wrapper refreshes token and retries the call."""
+    piwik = _make_piwik_http()
+    call_count = [0]
+
+    def func():
+        call_count[0] += 1
+        if call_count[0] == 1:
+            raise _make_http_error(401)
+        return "ok"
+
+    cfg = _mock_config()
+    cfg.piwik_token = "old-token"
+
+    def refresh():
+        cfg.piwik_token = "new-token"
+
+    cfg.init_token_auth = refresh
+
+    with _import_logs_config(cfg):
+        result = piwik._call_authentication_wrapper(func)
+        assert result == "ok"
+        assert call_count[0] == 2
+
+
+def test_call_authentication_wrapper_raises_when_token_unchanged_after_refresh():
+    """If the token did not change after refresh (e.g. refresh also failed), re-raise 401."""
+    piwik = _make_piwik_http()
+
+    def func():
+        raise _make_http_error(401)
+
+    cfg = _mock_config()
+    cfg.piwik_token = "same-token"
+    cfg.init_token_auth = lambda: None  # no-op — token stays the same
+
+    with _import_logs_config(cfg):
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            piwik._call_authentication_wrapper(func)
+        assert exc_info.value.code == 401
+
