@@ -56,7 +56,7 @@ jobs:
           architecture: x64
 
       - name: Install poetry
-        uses: abatilo/actions-poetry@c1aba0c402ae0d96fbb6d94050592a56b202009f
+        uses: snok/install-poetry@76e04a911780d5b312d89783f7b1cd627778900a
 
       - name: Update package version to current tag
         if: ${{ github.ref_type == 'tag' }}
