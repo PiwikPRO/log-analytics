@@ -43,6 +43,8 @@ jobs:
 
     pypi:
         runs-on: ubuntu-26.04
+        permissions:
+            contents: read
         timeout-minutes: 20
         steps:
             - name: Check out repository code
