@@ -15,6 +15,9 @@ RUN apt-get update \
 RUN ln -sf /usr/bin/python3 /usr/bin/python \
   && mkdir /tmp/blobfuse /tmp/blobfusetmp
 
+# blobfuse2 ships Ubuntu 22.04 .debs today; switch to 26.04 when Azure publishes them
+# (https://github.com/Azure/azure-storage-fuse/issues/2274#issuecomment-4921878400).
+# Ubuntu 22.04 .deb until blobfuse2 ships a 26.04 build (azure-storage-fuse#2274).
 ARG BLOBFUSE2_VERSION=2.5.3
 RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \
