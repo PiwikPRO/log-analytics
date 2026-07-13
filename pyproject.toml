@@ -1,19 +1,56 @@
-[tool.poetry]
-name = "piwik_pro_log_analytics"
-readme = "README.md"
-# This is managed by Github Actions
+[project]
+name = "piwik-pro-log-analytics"
+# Version is set from the git tag in the release workflow when publishing.
 version = "0.0.1"
 description = "Allows importing common web server log formats (nginx, apache, iss and more) directly to Piwik PRO. It's Free Software available under GPLv3 license, available on GitHub"
-authors = ["Piwik PRO <kosto@piwik.pro>"]
-license = "GPL-3.0-or-later"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Piwik PRO", email = "kosto@piwik.pro" }]
 
-[tool.poetry.dependencies]
-python = ">=3.6"
-
+[project.scripts]
+piwik_pro_log_analytics = "piwik_pro_log_analytics.import_logs:main"
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
 
-[tool.poetry.scripts]
-piwik_pro_log_analytics = "piwik_pro_log_analytics.import_logs:main"
+[tool.setuptools]
+packages = ["piwik_pro_log_analytics"]
+
+[tool.uv]
+package = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+src = ["piwik_pro_log_analytics", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "W",
+    "I",
+    "A",
+    "ERA",
+    "PL",
+    "UP",
+]
+ignore = [
+    "PLR2004",
+    "PLR0913",
+]
+
+# Legacy importer and tests predate stricter pylint-style and pyupgrade rules.
+[tool.ruff.lint.per-file-ignores]
+"piwik_pro_log_analytics/import_logs.py" = ["A", "ERA", "PL", "UP"]
+"tests/**" = ["A", "ERA", "PL", "UP"]
+
+[dependency-groups]
+dev-local = [
+    "tox>=4.21",
+    "pytest>=7",
+    "tox-uv>=1.33.4",
+    "ruff>=0.12.7",
+]

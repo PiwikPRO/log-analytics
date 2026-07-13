@@ -1,0 +1,2 @@
+# Keep tests out of the source distribution (setuptools otherwise picks them up).
+prune tests
