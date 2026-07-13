@@ -3,6 +3,8 @@
   pull_request:
 
 name: Linters
+permissions:
+  contents: read
 jobs:
   lint:
     runs-on: ubuntu-26.04
