@@ -15,15 +15,12 @@ RUN apt-get update \
 RUN ln -sf /usr/bin/python3 /usr/bin/python \
   && mkdir /tmp/blobfuse /tmp/blobfusetmp
 
-ARG BLOBFUSE2_VERSION=2.5.3
+# Ubuntu 26.04 ships libfuse3.so.4; use the Debian 13 amd64 build (2.5.4+) per
+# azure-storage-fuse#2274#issuecomment-4921878400. Image is amd64-only.
+ARG BLOBFUSE2_VERSION=2.5.4
 RUN set -eux; \
-    arch="$(dpkg --print-architecture)"; \
-    case "$arch" in \
-        amd64) bf_arch=x86_64 ;; \
-        arm64) bf_arch=arm64 ;; \
-        *) echo "unsupported architecture: $arch" >&2; exit 1 ;; \
-    esac; \
-    wget -q "https://github.com/Azure/azure-storage-fuse/releases/download/blobfuse2-${BLOBFUSE2_VERSION}/blobfuse2-${BLOBFUSE2_VERSION}-Ubuntu-22.04.${bf_arch}.deb" -O /tmp/blobfuse2.deb; \
+    test "$(dpkg --print-architecture)" = amd64; \
+    wget -q "https://packages.microsoft.com/debian/13/prod/pool/main/b/blobfuse2/blobfuse2_${BLOBFUSE2_VERSION}_amd64.deb" -O /tmp/blobfuse2.deb; \
     apt-get update; \
     apt-get install -y --no-install-recommends /tmp/blobfuse2.deb; \
     rm -f /tmp/blobfuse2.deb; \
