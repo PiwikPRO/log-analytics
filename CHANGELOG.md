@@ -6,6 +6,8 @@
 - PPPSYS-56851 Migrated packaging and CI from Poetry to uv (PEP 621, setuptools, committed `uv.lock`); PyPI releases use `uv publish`.
 - PPPSYS-56851 Added local multi-version testing with tox (`tox.ini`, environments `py310`–`py314` aligned with CI); optional `dev-local` uv dependency group installs tox and tox-uv (see README).
 - PPPSYS-56851 Replaced legacy Black/Flake8/isort GitHub Action with **Ruff** (`ruff check` / `ruff format --check` in CI; configuration in `pyproject.toml`).
+- PPPSYS-56851 Serialize concurrent OAuth token initialization and harden 401 refresh retries
+- PPPSYS-56851 Handle HTTP 429 using Retry-After and a shared cross-worker rate-limit window
 
 ## [5.2.1] - 2023-11-09
 
