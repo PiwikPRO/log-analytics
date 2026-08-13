@@ -1783,6 +1783,16 @@ def test_redact_url_component_for_log_masks_sensitive_query_params():
     assert "limit=3" in redacted
 
 
+def test_describe_payload_for_log_omits_body_contents():
+    payload = json.dumps({"client_id": "app-id", "client_secret": "super-secret"}).encode("utf-8")
+    described = import_logs._describe_payload_for_log(payload)
+    assert described == "<bytes, %d bytes>" % len(payload)
+    assert "super-secret" not in described
+    assert "client_id" not in described
+    assert import_logs._describe_payload_for_log(None) == "<none>"
+    assert import_logs._describe_payload_for_log({"client_secret": "s3cret"}) == "<dict, 1 items>"
+
+
 def test_redact_sensitive_for_log_masks_query_args_dict():
     redacted = import_logs._redact_sensitive_for_log(
         {"limit": 3, "token_auth": "secret-token", "client_secret": "s3cret"}

@@ -199,6 +199,23 @@ def _redact_sensitive_for_log(value, *, as_payload=True):
     return value
 
 
+def _describe_payload_for_log(value):
+    """Describe a request body by shape only.
+
+    Bodies may carry credentials (e.g. the OAuth ``client_secret``), so nothing
+    derived from their contents is emitted - only the type and the size.
+    """
+    if value is None:
+        return "<none>"
+    if isinstance(value, str):
+        return "<str, %d chars>" % len(value)
+    if isinstance(value, (bytes, bytearray)):
+        return "<%s, %d bytes>" % (type(value).__name__, len(value))
+    if isinstance(value, (dict, list, tuple, set)):
+        return "<%s, %d items>" % (type(value).__name__, len(value))
+    return "<%s>" % type(value).__name__
+
+
 def _redact_url_component_for_log(value):
     """Redact sensitive query-string parameters in a URL or path+query string."""
     if not isinstance(value, str) or not value:
@@ -1829,10 +1846,7 @@ class PiwikHttpUrllib(PiwikHttpBase):
         logging.debug("Request method '%s'" % request.get_method())
         logging.debug("Request query args '%s'" % _redact_sensitive_for_log(args))
         logging.debug("Request headers '%s'" % _redact_sensitive_for_log(headers))
-        # Redacted before logging; CodeQL cannot see custom sanitizers.
-        logging.debug(  # codeql[py/clear-text-logging-sensitive-data]
-            "Request data '%s'" % _redact_sensitive_for_log(data)
-        )
+        logging.debug("Request data %s" % _describe_payload_for_log(data))
         logging.debug("Request to '%s'" % _redact_url_component_for_log(request.get_full_url()))
 
         self._handle_basic_auth(request)
