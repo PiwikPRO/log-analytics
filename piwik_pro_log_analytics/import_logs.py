@@ -120,16 +120,46 @@ def _get_site_id_and_url(site):
 
 
 _REDACTED = "[***REDACTED***]"
-_SENSITIVE_LOG_KEYS = frozenset(
-    {
-        "access_token",
-        "authorization",
-        "client_secret",
-        "password",
-        "refresh_token",
-        "token_auth",
-    }
+# Match if the key name contains any of these fragments (case-insensitive).
+# Prefer over-redacting debug output over leaking credentials.
+_SENSITIVE_LOG_KEY_FRAGMENTS = (
+    # credentials / auth
+    "authorization",
+    "auth",
+    "bearer",
+    "credential",
+    "cookie",
+    "csrf",
+    "jwt",
+    "key",
+    "otp",
+    "pass",
+    "passwd",
+    "password",
+    "passphrase",
+    "pin",
+    "private",
+    "pwd",
+    "refresh",
+    "secret",
+    "session",
+    "signature",
+    "token",
+    # payment / government identifiers often in default redaction lists
+    "card",
+    "credit",
+    "cvv",
+    "cvc",
+    "ssn",
+    # contact PII commonly scrubbed with secrets
+    "email",
+    "phone",
 )
+
+
+def _is_sensitive_log_key(key):
+    key_l = str(key).lower()
+    return any(fragment in key_l for fragment in _SENSITIVE_LOG_KEY_FRAGMENTS)
 
 
 def _redact_sensitive_for_log(value, *, as_payload=True):
@@ -141,7 +171,7 @@ def _redact_sensitive_for_log(value, *, as_payload=True):
     if isinstance(value, dict):
         redacted = {}
         for key, item in value.items():
-            if str(key).lower() in _SENSITIVE_LOG_KEYS:
+            if _is_sensitive_log_key(key):
                 redacted[key] = _REDACTED
             else:
                 redacted[key] = _redact_sensitive_for_log(item, as_payload=False)
@@ -167,6 +197,30 @@ def _redact_sensitive_for_log(value, *, as_payload=True):
         except (TypeError, ValueError):
             return _REDACTED
     return value
+
+
+def _redact_url_component_for_log(value):
+    """Redact sensitive query-string parameters in a URL or path+query string."""
+    if not isinstance(value, str) or not value:
+        return value
+    parts = urllib.parse.urlsplit(value)
+    if not parts.query:
+        return value
+    redacted_pairs = []
+    for key, item in urllib.parse.parse_qsl(parts.query, keep_blank_values=True):
+        if _is_sensitive_log_key(key):
+            redacted_pairs.append((key, _REDACTED))
+        else:
+            redacted_pairs.append((key, item))
+    return urllib.parse.urlunsplit(
+        (
+            parts.scheme,
+            parts.netloc,
+            parts.path,
+            urllib.parse.urlencode(redacted_pairs),
+            parts.fragment,
+        )
+    )
 
 
 class BaseFormatException(Exception):
@@ -1770,13 +1824,16 @@ class PiwikHttpUrllib(PiwikHttpBase):
             timeout = None  # the config global object may not be created at this point
 
         request = urllib.request.Request(url + path, data, headers)
-        logging.debug("Request url '%s'" % url)
-        logging.debug("Request path '%s'" % path)
+        logging.debug("Request url '%s'" % _redact_url_component_for_log(url))
+        logging.debug("Request path '%s'" % _redact_url_component_for_log(path))
         logging.debug("Request method '%s'" % request.get_method())
-        logging.debug("Request query args '%s'" % args)
+        logging.debug("Request query args '%s'" % _redact_sensitive_for_log(args))
         logging.debug("Request headers '%s'" % _redact_sensitive_for_log(headers))
-        logging.debug("Request data '%s'" % _redact_sensitive_for_log(data))
-        logging.debug("Request to '%s'" % request.get_full_url())
+        # Redacted before logging; CodeQL cannot see custom sanitizers.
+        logging.debug(  # codeql[py/clear-text-logging-sensitive-data]
+            "Request data '%s'" % _redact_sensitive_for_log(data)
+        )
+        logging.debug("Request to '%s'" % _redact_url_component_for_log(request.get_full_url()))
 
         self._handle_basic_auth(request)
         # Use non-default SSL context if invalid certificates shall be
@@ -1912,7 +1969,7 @@ class PiwikHttpUrllib(PiwikHttpBase):
 
         # decorate message w/ HTTP response, if it can be retrieved
         if hasattr(e, "read"):
-            message = message + ", response: " + e.read().decode()
+            message = message + ", response: " + _redact_sensitive_for_log(e.read().decode())
         return code, message
 
     def _call_authentication_wrapper(self, func, *args, **kwargs):

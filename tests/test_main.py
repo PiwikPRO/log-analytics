@@ -1718,7 +1718,7 @@ def test_redact_sensitive_for_log_masks_token_dict():
     )
     assert redacted == {
         "access_token": "[***REDACTED***]",
-        "token_type": "Bearer",
+        "token_type": "[***REDACTED***]",
         "expires_in": 1800,
     }
 
@@ -1728,9 +1728,19 @@ def test_redact_sensitive_for_log_masks_authorization_header():
         {
             "Content-type": "application/json",
             "Authorization": "Bearer eyJhbGciOiJSUzI1NiJ9.secret",
+            "Cookie": "session=abc123",
+            "Set-Cookie": "session=abc123",
+            "X-Api-Secret": "top-secret",
+            "X-Api-Key": "key-value",
+            "session_id": "sess-1",
         }
     )
     assert redacted["Authorization"] == "[***REDACTED***]"
+    assert redacted["Cookie"] == "[***REDACTED***]"
+    assert redacted["Set-Cookie"] == "[***REDACTED***]"
+    assert redacted["X-Api-Secret"] == "[***REDACTED***]"
+    assert redacted["X-Api-Key"] == "[***REDACTED***]"
+    assert redacted["session_id"] == "[***REDACTED***]"
     assert redacted["Content-type"] == "application/json"
 
 
@@ -1754,18 +1764,29 @@ def test_redact_sensitive_for_log_masks_json_response_string():
     response = '{"access_token":"eyJ.secret","token_type":"Bearer","expires_in":1800}'
     redacted = import_logs._redact_sensitive_for_log(response)
     assert "eyJ.secret" not in redacted
-    assert (
-        '"access_token": "[***REDACTED***]"' in redacted
-        or '"access_token":"[***REDACTED***]"' in redacted
-    )
+    assert '"access_token": "[***REDACTED***]"' in redacted or '"access_token":"[***REDACTED***]"' in redacted
 
 
 def test_redact_sensitive_for_log_fails_closed_on_non_json_string():
-    assert (
-        import_logs._redact_sensitive_for_log("not-json client_secret=leak")
-        == "[***REDACTED***]"
-    )
+    assert import_logs._redact_sensitive_for_log("not-json client_secret=leak") == "[***REDACTED***]"
 
 
 def test_redact_sensitive_for_log_fails_closed_on_undecodable_bytes():
     assert import_logs._redact_sensitive_for_log(b"\xff\xfe secret") == "[***REDACTED***]"
+
+
+def test_redact_url_component_for_log_masks_sensitive_query_params():
+    redacted = import_logs._redact_url_component_for_log("/api/apps/v2?limit=3&token_auth=secret-token&client_id=app")
+    assert "secret-token" not in redacted
+    assert "REDACTED" in redacted
+    assert "client_id=app" in redacted
+    assert "limit=3" in redacted
+
+
+def test_redact_sensitive_for_log_masks_query_args_dict():
+    redacted = import_logs._redact_sensitive_for_log(
+        {"limit": 3, "token_auth": "secret-token", "client_secret": "s3cret"}
+    )
+    assert redacted["token_auth"] == "[***REDACTED***]"
+    assert redacted["client_secret"] == "[***REDACTED***]"
+    assert redacted["limit"] == 3
