@@ -1706,3 +1706,66 @@ def test_rate_limit_until_extended_mid_sleep_is_respected():
 
     assert result == "ok"
     assert len(sleep_calls) == 2, "Worker should sleep twice: once for original window, once after extension"
+
+
+def test_redact_sensitive_for_log_masks_token_dict():
+    redacted = import_logs._redact_sensitive_for_log(
+        {
+            "access_token": "eyJhbGciOiJSUzI1NiJ9.secret",
+            "token_type": "Bearer",
+            "expires_in": 1800,
+        }
+    )
+    assert redacted == {
+        "access_token": "[***REDACTED***]",
+        "token_type": "Bearer",
+        "expires_in": 1800,
+    }
+
+
+def test_redact_sensitive_for_log_masks_authorization_header():
+    redacted = import_logs._redact_sensitive_for_log(
+        {
+            "Content-type": "application/json",
+            "Authorization": "Bearer eyJhbGciOiJSUzI1NiJ9.secret",
+        }
+    )
+    assert redacted["Authorization"] == "[***REDACTED***]"
+    assert redacted["Content-type"] == "application/json"
+
+
+def test_redact_sensitive_for_log_masks_json_body_bytes():
+    payload = json.dumps(
+        {
+            "grant_type": "client_credentials",
+            "client_id": "app-id",
+            "client_secret": "super-secret",
+        }
+    ).encode("utf-8")
+    redacted = import_logs._redact_sensitive_for_log(payload)
+    assert isinstance(redacted, str)
+    parsed = json.loads(redacted)
+    assert parsed["client_secret"] == "[***REDACTED***]"
+    assert parsed["client_id"] == "app-id"
+    assert "super-secret" not in redacted
+
+
+def test_redact_sensitive_for_log_masks_json_response_string():
+    response = '{"access_token":"eyJ.secret","token_type":"Bearer","expires_in":1800}'
+    redacted = import_logs._redact_sensitive_for_log(response)
+    assert "eyJ.secret" not in redacted
+    assert (
+        '"access_token": "[***REDACTED***]"' in redacted
+        or '"access_token":"[***REDACTED***]"' in redacted
+    )
+
+
+def test_redact_sensitive_for_log_fails_closed_on_non_json_string():
+    assert (
+        import_logs._redact_sensitive_for_log("not-json client_secret=leak")
+        == "[***REDACTED***]"
+    )
+
+
+def test_redact_sensitive_for_log_fails_closed_on_undecodable_bytes():
+    assert import_logs._redact_sensitive_for_log(b"\xff\xfe secret") == "[***REDACTED***]"

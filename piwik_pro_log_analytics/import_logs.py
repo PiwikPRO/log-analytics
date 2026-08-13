@@ -119,6 +119,56 @@ def _get_site_id_and_url(site):
     return site["data"]["id"], site["data"]["attributes"]["urls"][0]
 
 
+_REDACTED = "[***REDACTED***]"
+_SENSITIVE_LOG_KEYS = frozenset(
+    {
+        "access_token",
+        "authorization",
+        "client_secret",
+        "password",
+        "refresh_token",
+        "token_auth",
+    }
+)
+
+
+def _redact_sensitive_for_log(value, *, as_payload=True):
+    """Return a copy of ``value`` safe to emit at debug level (credentials stripped).
+
+    When ``as_payload`` is true (request/response bodies), undecodable or non-JSON
+    content is replaced with ``[***REDACTED***]`` instead of being logged as-is.
+    """
+    if isinstance(value, dict):
+        redacted = {}
+        for key, item in value.items():
+            if str(key).lower() in _SENSITIVE_LOG_KEYS:
+                redacted[key] = _REDACTED
+            else:
+                redacted[key] = _redact_sensitive_for_log(item, as_payload=False)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_sensitive_for_log(item, as_payload=False) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_sensitive_for_log(item, as_payload=False) for item in value)
+    if isinstance(value, bytes):
+        try:
+            return _redact_sensitive_for_log(value.decode("utf-8"), as_payload=as_payload)
+        except UnicodeDecodeError:
+            return _REDACTED
+    if isinstance(value, str):
+        if not as_payload:
+            return value
+        try:
+            parsed = json.loads(value)
+        except (TypeError, ValueError):
+            return _REDACTED
+        try:
+            return json.dumps(_redact_sensitive_for_log(parsed, as_payload=False))
+        except (TypeError, ValueError):
+            return _REDACTED
+    return value
+
+
 class BaseFormatException(Exception):
     pass
 
@@ -1349,7 +1399,10 @@ class Configuration:
             self.piwik_token = None
             if not config.options.replay_tracking:
                 self.piwik_token = self._get_token_auth()
-            logging.debug("Authentication token is: %s", self.piwik_token)
+            logging.debug(
+                "Authentication token is: %s",
+                _redact_sensitive_for_log(self.piwik_token),
+            )
 
 
 class Statistics:
@@ -1721,8 +1774,8 @@ class PiwikHttpUrllib(PiwikHttpBase):
         logging.debug("Request path '%s'" % path)
         logging.debug("Request method '%s'" % request.get_method())
         logging.debug("Request query args '%s'" % args)
-        logging.debug("Request headers '%s'" % headers)
-        logging.debug("Request data '%s'" % data)
+        logging.debug("Request headers '%s'" % _redact_sensitive_for_log(headers))
+        logging.debug("Request data '%s'" % _redact_sensitive_for_log(data))
         logging.debug("Request to '%s'" % request.get_full_url())
 
         self._handle_basic_auth(request)
@@ -1749,7 +1802,7 @@ class PiwikHttpUrllib(PiwikHttpBase):
         response.close()
         # Replaces characters that can't be decoded with binary representation (e.g. '\\x80abc')
         result = result.decode(encoding, "backslashreplace")
-        logging.debug("Response '%s'" % result)
+        logging.debug("Response '%s'" % _redact_sensitive_for_log(result))
         return result
 
     def _handle_basic_auth(self, request):
