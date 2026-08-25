@@ -1352,9 +1352,7 @@ class Configuration:
 
         if not (self.options.piwik_api_url.startswith("http://") or self.options.piwik_api_url.startswith("https://")):
             self.options.piwik_api_url = "https://" + self.options.piwik_api_url
-        logging.debug(
-            "Piwik PRO Analytics API URL is: %s", _redact_url_component_for_log(self.options.piwik_api_url)
-        )
+        logging.debug("Piwik PRO Analytics API URL is: %s", _redact_url_component_for_log(self.options.piwik_api_url))
 
         if self.options.recorders < 1:
             self.options.recorders = 1
