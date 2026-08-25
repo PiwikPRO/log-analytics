@@ -217,12 +217,18 @@ def _describe_payload_for_log(value):
 
 
 def _redact_url_component_for_log(value):
-    """Redact sensitive query-string parameters in a URL or path+query string."""
+    """Redact userinfo and sensitive query-string parameters in a URL or path+query string."""
     if not isinstance(value, str) or not value:
         return value
     parts = urllib.parse.urlsplit(value)
+    netloc = parts.netloc
+    if "@" in netloc:
+        _, _, host = netloc.rpartition("@")
+        netloc = "%s@%s" % (_REDACTED, host)
     if not parts.query:
-        return value
+        if netloc == parts.netloc:
+            return value
+        return urllib.parse.urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
     redacted_pairs = []
     for key, item in urllib.parse.parse_qsl(parts.query, keep_blank_values=True):
         if _is_sensitive_log_key(key):
@@ -232,7 +238,7 @@ def _redact_url_component_for_log(value):
     return urllib.parse.urlunsplit(
         (
             parts.scheme,
-            parts.netloc,
+            netloc,
             parts.path,
             urllib.parse.urlencode(redacted_pairs),
             parts.fragment,
@@ -1339,14 +1345,16 @@ class Configuration:
 
         if not (self.options.piwik_url.startswith("http://") or self.options.piwik_url.startswith("https://")):
             self.options.piwik_url = "https://" + self.options.piwik_url
-        logging.debug("Piwik PRO Tracker API URL is: %s", self.options.piwik_url)
+        logging.debug("Piwik PRO Tracker API URL is: %s", _redact_url_component_for_log(self.options.piwik_url))
 
         if not self.options.piwik_api_url:
             self.options.piwik_api_url = self.options.piwik_url
 
         if not (self.options.piwik_api_url.startswith("http://") or self.options.piwik_api_url.startswith("https://")):
             self.options.piwik_api_url = "https://" + self.options.piwik_api_url
-        logging.debug("Piwik PRO Analytics API URL is: %s", self.options.piwik_api_url)
+        logging.debug(
+            "Piwik PRO Analytics API URL is: %s", _redact_url_component_for_log(self.options.piwik_api_url)
+        )
 
         if self.options.recorders < 1:
             self.options.recorders = 1
@@ -1811,7 +1819,7 @@ class PiwikHttpUrllib(PiwikHttpBase):
         """
 
         def redirect_request(self, req, fp, code, msg, hdrs, newurl):
-            logging.debug("Request redirected (code: %s) to '%s'" % (code, newurl))
+            logging.debug("Request redirected (code: %s) to '%s'" % (code, _redact_url_component_for_log(newurl)))
 
             return urllib.request.HTTPRedirectHandler.redirect_request(self, req, fp, code, msg, hdrs, newurl)
 
