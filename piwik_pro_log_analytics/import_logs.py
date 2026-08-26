@@ -157,16 +157,38 @@ _SENSITIVE_LOG_KEY_FRAGMENTS = (
 )
 
 
+def _contains_sensitive_fragment(text):
+    text_l = str(text).lower()
+    return any(fragment in text_l for fragment in _SENSITIVE_LOG_KEY_FRAGMENTS)
+
+
 def _is_sensitive_log_key(key):
-    key_l = str(key).lower()
-    return any(fragment in key_l for fragment in _SENSITIVE_LOG_KEY_FRAGMENTS)
+    return _contains_sensitive_fragment(key)
+
+
+def _looks_like_key_value_pairs(items):
+    """True if ``items`` is a sequence of 2-item (key, value) pairs, e.g. as accepted by urlencode()."""
+    return bool(items) and all(isinstance(item, (tuple, list)) and len(item) == 2 for item in items)
+
+
+def _redact_key_value_pairs(pairs):
+    redacted = []
+    for key, item in pairs:
+        if _is_sensitive_log_key(key):
+            redacted.append((key, _REDACTED))
+        else:
+            redacted.append((key, _redact_sensitive_for_log(item, as_payload=False)))
+    return redacted
 
 
 def _redact_sensitive_for_log(value, *, as_payload=True):
     """Return a copy of ``value`` safe to emit at debug level (credentials stripped).
 
     When ``as_payload`` is true (request/response bodies), undecodable or non-JSON
-    content is replaced with ``[***REDACTED***]`` instead of being logged as-is.
+    content is replaced with ``[***REDACTED***]`` instead of being logged as-is. Nested
+    string values are also redacted wholesale if their content mentions a sensitive
+    fragment (e.g. an error message echoing back a rejected secret), since they can't
+    be safely inspected field-by-field like a dict.
     """
     if isinstance(value, dict):
         redacted = {}
@@ -177,8 +199,12 @@ def _redact_sensitive_for_log(value, *, as_payload=True):
                 redacted[key] = _redact_sensitive_for_log(item, as_payload=False)
         return redacted
     if isinstance(value, list):
+        if _looks_like_key_value_pairs(value):
+            return _redact_key_value_pairs(value)
         return [_redact_sensitive_for_log(item, as_payload=False) for item in value]
     if isinstance(value, tuple):
+        if _looks_like_key_value_pairs(value):
+            return tuple(_redact_key_value_pairs(value))
         return tuple(_redact_sensitive_for_log(item, as_payload=False) for item in value)
     if isinstance(value, bytes):
         try:
@@ -187,6 +213,8 @@ def _redact_sensitive_for_log(value, *, as_payload=True):
             return _REDACTED
     if isinstance(value, str):
         if not as_payload:
+            if _contains_sensitive_fragment(value):
+                return _REDACTED
             return value
         try:
             parsed = json.loads(value)

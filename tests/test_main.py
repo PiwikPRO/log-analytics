@@ -1800,3 +1800,36 @@ def test_redact_sensitive_for_log_masks_query_args_dict():
     assert redacted["token_auth"] == "[***REDACTED***]"
     assert redacted["client_secret"] == "[***REDACTED***]"
     assert redacted["limit"] == 3
+
+
+def test_redact_sensitive_for_log_masks_secret_echoed_in_nested_text():
+    body = json.dumps(
+        {
+            "error": "invalid_client",
+            "error_description": "client authentication failed: secret abc123 rejected",
+        }
+    )
+    redacted = import_logs._redact_sensitive_for_log(body)
+    assert "abc123" not in redacted
+    parsed = json.loads(redacted)
+    assert parsed["error_description"] == "[***REDACTED***]"
+    assert parsed["error"] == "invalid_client"
+
+
+def test_redact_sensitive_for_log_preserves_benign_nested_strings():
+    redacted = import_logs._redact_sensitive_for_log(
+        {"Content-type": "application/json", "note": "all good, no issues here"}, as_payload=False
+    )
+    assert redacted == {"Content-type": "application/json", "note": "all good, no issues here"}
+
+
+def test_redact_sensitive_for_log_masks_key_value_pair_list():
+    redacted = import_logs._redact_sensitive_for_log([("client_secret", "abc123"), ("limit", 3)])
+    assert ("client_secret", "[***REDACTED***]") in redacted
+    assert ("limit", 3) in redacted
+    assert "abc123" not in str(redacted)
+
+
+def test_redact_sensitive_for_log_masks_key_value_pair_tuple():
+    redacted = import_logs._redact_sensitive_for_log((("token_auth", "secret-token"), ("limit", 3)))
+    assert redacted == (("token_auth", "[***REDACTED***]"), ("limit", 3))
