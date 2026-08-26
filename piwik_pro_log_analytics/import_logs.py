@@ -119,6 +119,161 @@ def _get_site_id_and_url(site):
     return site["data"]["id"], site["data"]["attributes"]["urls"][0]
 
 
+_REDACTED = "[***REDACTED***]"
+# Match if the key name contains any of these fragments (case-insensitive).
+# Prefer over-redacting debug output over leaking credentials.
+_SENSITIVE_LOG_KEY_FRAGMENTS = (
+    # credentials / auth
+    "authorization",
+    "auth",
+    "bearer",
+    "credential",
+    "cookie",
+    "csrf",
+    "jwt",
+    "key",
+    "otp",
+    "pass",
+    "passwd",
+    "password",
+    "passphrase",
+    "pin",
+    "private",
+    "pwd",
+    "refresh",
+    "secret",
+    "session",
+    "signature",
+    "token",
+    # payment / government identifiers often in default redaction lists
+    "card",
+    "credit",
+    "cvv",
+    "cvc",
+    "ssn",
+    # contact PII commonly scrubbed with secrets
+    "email",
+    "phone",
+)
+
+
+def _contains_sensitive_fragment(text):
+    text_l = str(text).lower()
+    return any(fragment in text_l for fragment in _SENSITIVE_LOG_KEY_FRAGMENTS)
+
+
+def _is_sensitive_log_key(key):
+    return _contains_sensitive_fragment(key)
+
+
+def _looks_like_key_value_pairs(items):
+    """True if ``items`` is a sequence of 2-item (key, value) pairs, e.g. as accepted by urlencode()."""
+    return bool(items) and all(isinstance(item, (tuple, list)) and len(item) == 2 for item in items)
+
+
+def _redact_key_value_pairs(pairs):
+    redacted = []
+    for key, item in pairs:
+        if _is_sensitive_log_key(key):
+            redacted.append((key, _REDACTED))
+        else:
+            redacted.append((key, _redact_sensitive_for_log(item, as_payload=False)))
+    return redacted
+
+
+def _redact_sensitive_for_log(value, *, as_payload=True):
+    """Return a copy of ``value`` safe to emit at debug level (credentials stripped).
+
+    When ``as_payload`` is true (request/response bodies), undecodable or non-JSON
+    content is replaced with ``[***REDACTED***]`` instead of being logged as-is. Nested
+    string values are also redacted wholesale if their content mentions a sensitive
+    fragment (e.g. an error message echoing back a rejected secret), since they can't
+    be safely inspected field-by-field like a dict.
+    """
+    if isinstance(value, dict):
+        redacted = {}
+        for key, item in value.items():
+            if _is_sensitive_log_key(key):
+                redacted[key] = _REDACTED
+            else:
+                redacted[key] = _redact_sensitive_for_log(item, as_payload=False)
+        return redacted
+    if isinstance(value, list):
+        if _looks_like_key_value_pairs(value):
+            return _redact_key_value_pairs(value)
+        return [_redact_sensitive_for_log(item, as_payload=False) for item in value]
+    if isinstance(value, tuple):
+        if _looks_like_key_value_pairs(value):
+            return tuple(_redact_key_value_pairs(value))
+        return tuple(_redact_sensitive_for_log(item, as_payload=False) for item in value)
+    if isinstance(value, bytes):
+        try:
+            return _redact_sensitive_for_log(value.decode("utf-8"), as_payload=as_payload)
+        except UnicodeDecodeError:
+            return _REDACTED
+    if isinstance(value, str):
+        if not as_payload:
+            if _contains_sensitive_fragment(value):
+                return _REDACTED
+            return value
+        try:
+            parsed = json.loads(value)
+        except (TypeError, ValueError):
+            return _REDACTED
+        try:
+            return json.dumps(_redact_sensitive_for_log(parsed, as_payload=False))
+        except (TypeError, ValueError):
+            return _REDACTED
+    return value
+
+
+def _describe_payload_for_log(value):
+    """Describe a request body by shape only.
+
+    Bodies may carry credentials (e.g. the OAuth ``client_secret``), so nothing
+    derived from their contents is emitted - only the type and the size.
+    """
+    if value is None:
+        return "<none>"
+    if isinstance(value, str):
+        return "<str, %d chars>" % len(value)
+    if isinstance(value, (bytes, bytearray)):
+        return "<%s, %d bytes>" % (type(value).__name__, len(value))
+    if isinstance(value, (dict, list, tuple, set)):
+        return "<%s, %d items>" % (type(value).__name__, len(value))
+    return "<%s>" % type(value).__name__
+
+
+def _redact_url_component_for_log(value):
+    """Redact userinfo and sensitive query-string parameters in a URL or path+query string."""
+    if not isinstance(value, str) or not value:
+        return value
+    parts = urllib.parse.urlsplit(value)
+    netloc = parts.netloc
+    if "@" in netloc:
+        _, _, host = netloc.rpartition("@")
+        netloc = "%s@%s" % (_REDACTED, host)
+    if not parts.query:
+        if netloc == parts.netloc:
+            return value
+        return urllib.parse.urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+    redacted_pairs = []
+    for key, item in urllib.parse.parse_qsl(parts.query, keep_blank_values=True):
+        if _is_sensitive_log_key(key):
+            redacted_pairs.append((key, _REDACTED))
+        else:
+            redacted_pairs.append((key, item))
+    return urllib.parse.urlunsplit(
+        (
+            parts.scheme,
+            netloc,
+            parts.path,
+            urllib.parse.urlencode(redacted_pairs),
+            parts.fragment,
+        )
+    )
+
+
 class BaseFormatException(Exception):
     pass
 
@@ -1218,14 +1373,14 @@ class Configuration:
 
         if not (self.options.piwik_url.startswith("http://") or self.options.piwik_url.startswith("https://")):
             self.options.piwik_url = "https://" + self.options.piwik_url
-        logging.debug("Piwik PRO Tracker API URL is: %s", self.options.piwik_url)
+        logging.debug("Piwik PRO Tracker API URL is: %s", _redact_url_component_for_log(self.options.piwik_url))
 
         if not self.options.piwik_api_url:
             self.options.piwik_api_url = self.options.piwik_url
 
         if not (self.options.piwik_api_url.startswith("http://") or self.options.piwik_api_url.startswith("https://")):
             self.options.piwik_api_url = "https://" + self.options.piwik_api_url
-        logging.debug("Piwik PRO Analytics API URL is: %s", self.options.piwik_api_url)
+        logging.debug("Piwik PRO Analytics API URL is: %s", _redact_url_component_for_log(self.options.piwik_api_url))
 
         if self.options.recorders < 1:
             self.options.recorders = 1
@@ -1349,7 +1504,10 @@ class Configuration:
             self.piwik_token = None
             if not config.options.replay_tracking:
                 self.piwik_token = self._get_token_auth()
-            logging.debug("Authentication token is: %s", self.piwik_token)
+            logging.debug(
+                "Authentication token is: %s",
+                _redact_sensitive_for_log(self.piwik_token),
+            )
 
 
 class Statistics:
@@ -1687,7 +1845,7 @@ class PiwikHttpUrllib(PiwikHttpBase):
         """
 
         def redirect_request(self, req, fp, code, msg, hdrs, newurl):
-            logging.debug("Request redirected (code: %s) to '%s'" % (code, newurl))
+            logging.debug("Request redirected (code: %s) to '%s'" % (code, _redact_url_component_for_log(newurl)))
 
             return urllib.request.HTTPRedirectHandler.redirect_request(self, req, fp, code, msg, hdrs, newurl)
 
@@ -1717,13 +1875,13 @@ class PiwikHttpUrllib(PiwikHttpBase):
             timeout = None  # the config global object may not be created at this point
 
         request = urllib.request.Request(url + path, data, headers)
-        logging.debug("Request url '%s'" % url)
-        logging.debug("Request path '%s'" % path)
+        logging.debug("Request url '%s'" % _redact_url_component_for_log(url))
+        logging.debug("Request path '%s'" % _redact_url_component_for_log(path))
         logging.debug("Request method '%s'" % request.get_method())
-        logging.debug("Request query args '%s'" % args)
-        logging.debug("Request headers '%s'" % headers)
-        logging.debug("Request data '%s'" % data)
-        logging.debug("Request to '%s'" % request.get_full_url())
+        logging.debug("Request query args '%s'" % _redact_sensitive_for_log(args))
+        logging.debug("Request headers '%s'" % _redact_sensitive_for_log(headers))
+        logging.debug("Request data %s" % _describe_payload_for_log(data))
+        logging.debug("Request to '%s'" % _redact_url_component_for_log(request.get_full_url()))
 
         self._handle_basic_auth(request)
         # Use non-default SSL context if invalid certificates shall be
@@ -1749,7 +1907,7 @@ class PiwikHttpUrllib(PiwikHttpBase):
         response.close()
         # Replaces characters that can't be decoded with binary representation (e.g. '\\x80abc')
         result = result.decode(encoding, "backslashreplace")
-        logging.debug("Response '%s'" % result)
+        logging.debug("Response '%s'" % _redact_sensitive_for_log(result))
         return result
 
     def _handle_basic_auth(self, request):
@@ -1859,7 +2017,7 @@ class PiwikHttpUrllib(PiwikHttpBase):
 
         # decorate message w/ HTTP response, if it can be retrieved
         if hasattr(e, "read"):
-            message = message + ", response: " + e.read().decode()
+            message = message + ", response: " + _redact_sensitive_for_log(e.read().decode())
         return code, message
 
     def _call_authentication_wrapper(self, func, *args, **kwargs):

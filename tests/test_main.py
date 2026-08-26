@@ -1706,3 +1706,130 @@ def test_rate_limit_until_extended_mid_sleep_is_respected():
 
     assert result == "ok"
     assert len(sleep_calls) == 2, "Worker should sleep twice: once for original window, once after extension"
+
+
+def test_redact_sensitive_for_log_masks_token_dict():
+    redacted = import_logs._redact_sensitive_for_log(
+        {
+            "access_token": "eyJhbGciOiJSUzI1NiJ9.secret",
+            "token_type": "Bearer",
+            "expires_in": 1800,
+        }
+    )
+    assert redacted == {
+        "access_token": "[***REDACTED***]",
+        "token_type": "[***REDACTED***]",
+        "expires_in": 1800,
+    }
+
+
+def test_redact_sensitive_for_log_masks_authorization_header():
+    redacted = import_logs._redact_sensitive_for_log(
+        {
+            "Content-type": "application/json",
+            "Authorization": "Bearer eyJhbGciOiJSUzI1NiJ9.secret",
+            "Cookie": "session=abc123",
+            "Set-Cookie": "session=abc123",
+            "X-Api-Secret": "top-secret",
+            "X-Api-Key": "key-value",
+            "session_id": "sess-1",
+        }
+    )
+    assert redacted["Authorization"] == "[***REDACTED***]"
+    assert redacted["Cookie"] == "[***REDACTED***]"
+    assert redacted["Set-Cookie"] == "[***REDACTED***]"
+    assert redacted["X-Api-Secret"] == "[***REDACTED***]"
+    assert redacted["X-Api-Key"] == "[***REDACTED***]"
+    assert redacted["session_id"] == "[***REDACTED***]"
+    assert redacted["Content-type"] == "application/json"
+
+
+def test_redact_sensitive_for_log_masks_json_body_bytes():
+    payload = json.dumps(
+        {
+            "grant_type": "client_credentials",
+            "client_id": "app-id",
+            "client_secret": "super-secret",
+        }
+    ).encode("utf-8")
+    redacted = import_logs._redact_sensitive_for_log(payload)
+    assert isinstance(redacted, str)
+    parsed = json.loads(redacted)
+    assert parsed["client_secret"] == "[***REDACTED***]"
+    assert parsed["client_id"] == "app-id"
+    assert "super-secret" not in redacted
+
+
+def test_redact_sensitive_for_log_masks_json_response_string():
+    response = '{"access_token":"eyJ.secret","token_type":"Bearer","expires_in":1800}'
+    redacted = import_logs._redact_sensitive_for_log(response)
+    assert "eyJ.secret" not in redacted
+    assert '"access_token": "[***REDACTED***]"' in redacted or '"access_token":"[***REDACTED***]"' in redacted
+
+
+def test_redact_sensitive_for_log_fails_closed_on_non_json_string():
+    assert import_logs._redact_sensitive_for_log("not-json client_secret=leak") == "[***REDACTED***]"
+
+
+def test_redact_sensitive_for_log_fails_closed_on_undecodable_bytes():
+    assert import_logs._redact_sensitive_for_log(b"\xff\xfe secret") == "[***REDACTED***]"
+
+
+def test_redact_url_component_for_log_masks_sensitive_query_params():
+    redacted = import_logs._redact_url_component_for_log("/api/apps/v2?limit=3&token_auth=secret-token&client_id=app")
+    assert "secret-token" not in redacted
+    assert "REDACTED" in redacted
+    assert "client_id=app" in redacted
+    assert "limit=3" in redacted
+
+
+def test_describe_payload_for_log_omits_body_contents():
+    payload = json.dumps({"client_id": "app-id", "client_secret": "super-secret"}).encode("utf-8")
+    described = import_logs._describe_payload_for_log(payload)
+    assert described == "<bytes, %d bytes>" % len(payload)
+    assert "super-secret" not in described
+    assert "client_id" not in described
+    assert import_logs._describe_payload_for_log(None) == "<none>"
+    assert import_logs._describe_payload_for_log({"client_secret": "s3cret"}) == "<dict, 1 items>"
+
+
+def test_redact_sensitive_for_log_masks_query_args_dict():
+    redacted = import_logs._redact_sensitive_for_log(
+        {"limit": 3, "token_auth": "secret-token", "client_secret": "s3cret"}
+    )
+    assert redacted["token_auth"] == "[***REDACTED***]"
+    assert redacted["client_secret"] == "[***REDACTED***]"
+    assert redacted["limit"] == 3
+
+
+def test_redact_sensitive_for_log_masks_secret_echoed_in_nested_text():
+    body = json.dumps(
+        {
+            "error": "invalid_client",
+            "error_description": "client authentication failed: secret abc123 rejected",
+        }
+    )
+    redacted = import_logs._redact_sensitive_for_log(body)
+    assert "abc123" not in redacted
+    parsed = json.loads(redacted)
+    assert parsed["error_description"] == "[***REDACTED***]"
+    assert parsed["error"] == "invalid_client"
+
+
+def test_redact_sensitive_for_log_preserves_benign_nested_strings():
+    redacted = import_logs._redact_sensitive_for_log(
+        {"Content-type": "application/json", "note": "all good, no issues here"}, as_payload=False
+    )
+    assert redacted == {"Content-type": "application/json", "note": "all good, no issues here"}
+
+
+def test_redact_sensitive_for_log_masks_key_value_pair_list():
+    redacted = import_logs._redact_sensitive_for_log([("client_secret", "abc123"), ("limit", 3)])
+    assert ("client_secret", "[***REDACTED***]") in redacted
+    assert ("limit", 3) in redacted
+    assert "abc123" not in str(redacted)
+
+
+def test_redact_sensitive_for_log_masks_key_value_pair_tuple():
+    redacted = import_logs._redact_sensitive_for_log((("token_auth", "secret-token"), ("limit", 3)))
+    assert redacted == (("token_auth", "[***REDACTED***]"), ("limit", 3))
