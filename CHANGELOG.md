@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- PPI-1616 Deprecated passing `--client-secret`/`--client-id`/`--auth-password`/`--auth-user` on the
+  command line (they leak via shell history and the process list); added `PIWIK_CLIENT_SECRET`,
+  `PIWIK_CLIENT_ID`, `PIWIK_AUTH_PASSWORD`, and `PIWIK_AUTH_USER` environment variable equivalents,
+  which take precedence when the corresponding flag isn't set.
 - PPNA-10000 Redact sensitive values from HTTP/auth debug logging
 - PPPSYS-56851 Require Python 3.10 or newer (3.9 and older are end-of-life); CI tests 3.10 through 3.14
 - PPPSYS-56851 Migrated packaging and CI from Poetry to uv (PEP 621, setuptools, committed `uv.lock`); PyPI releases use `uv publish`.
