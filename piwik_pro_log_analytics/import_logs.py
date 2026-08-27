@@ -761,13 +761,19 @@ class Configuration:
         parser.add_argument(
             "--auth-user",
             dest="auth_user",
-            help="Basic auth user",
+            default=None,
+            help="Basic auth user. Can also be set via the PIWIK_AUTH_USER environment variable.",
         )
         # Basic auth password
         parser.add_argument(
             "--auth-password",
             dest="auth_password",
-            help="Basic auth password",
+            default=None,
+            help=(
+                "Basic auth password. Passing it on the command line is deprecated - it exposes the"
+                " password in your shell history and to other users via the process list. Set the"
+                " PIWIK_AUTH_PASSWORD environment variable instead."
+            ),
         )
         parser.add_argument(
             "--debug",
@@ -860,12 +866,21 @@ class Configuration:
         parser.add_argument(
             "--client-id",
             dest="client_id",
-            help="Client ID used when OAuth authentication is needed",
+            default=None,
+            help=(
+                "Client ID used when OAuth authentication is needed. Can also be set via the"
+                " PIWIK_CLIENT_ID environment variable."
+            ),
         )
         parser.add_argument(
             "--client-secret",
             dest="client_secret",
-            help="Client secret used when OAuth authentication is needed",
+            default=None,
+            help=(
+                "Client secret used when OAuth authentication is needed. Passing it on the command"
+                " line is deprecated - it exposes the secret in your shell history and to other"
+                " users via the process list. Set the PIWIK_CLIENT_SECRET environment variable instead."
+            ),
         )
 
         parser.add_argument(
@@ -1358,6 +1373,28 @@ class Configuration:
             level=logging.DEBUG if self.options.debug >= 1 else logging.INFO,
         )
 
+        if self.options.client_secret is None:
+            self.options.client_secret = os.environ.get("PIWIK_CLIENT_SECRET")
+        else:
+            logging.warning(
+                "DeprecationWarning: passing --client-secret on the command line is deprecated and may be"
+                " removed in a future release, since it can leak the secret via shell history or the process"
+                " list. Set the PIWIK_CLIENT_SECRET environment variable instead."
+            )
+        if self.options.client_id is None:
+            self.options.client_id = os.environ.get("PIWIK_CLIENT_ID")
+
+        if self.options.auth_password is None:
+            self.options.auth_password = os.environ.get("PIWIK_AUTH_PASSWORD")
+        else:
+            logging.warning(
+                "DeprecationWarning: passing --auth-password on the command line is deprecated and may be"
+                " removed in a future release, since it can leak the password via shell history or the process"
+                " list. Set the PIWIK_AUTH_PASSWORD environment variable instead."
+            )
+        if self.options.auth_user is None:
+            self.options.auth_user = os.environ.get("PIWIK_AUTH_USER")
+
         self.options.excluded_useragents = set([s.lower() for s in self.options.excluded_useragents])
 
         self._parse_paths()
@@ -1486,9 +1523,7 @@ class Configuration:
 
             return api_result
         else:
-            fatal_error(
-                "OAuth authentication failed. Make sure that --client-id and --client-secret options are provided."
-            )
+            fatal_error("OAuth authentication failed. Make sure that PIWIK_CLIENT_ID and PIWIK_CLIENT_SECRET are set.")
 
     def get_resolver(self):
         if self.options.site_id:

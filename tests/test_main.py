@@ -1324,6 +1324,106 @@ def test_glob_filenames():
     ]
 
 
+def test_client_credentials_fall_back_to_environment_variables():
+    argv = ["--url=http://localhost", "logs/common.log"]
+
+    with patch.dict(os.environ, {"PIWIK_CLIENT_ID": "env-id", "PIWIK_CLIENT_SECRET": "env-secret"}):
+        config = import_logs.Configuration(argv)
+
+    assert config.options.client_id == "env-id"
+    assert config.options.client_secret == "env-secret"
+
+
+def test_client_credentials_cli_args_take_precedence_over_environment():
+    argv = [
+        "--url=http://localhost",
+        "--client-id=cli-id",
+        "--client-secret=cli-secret",
+        "logs/common.log",
+    ]
+
+    with patch.dict(os.environ, {"PIWIK_CLIENT_ID": "env-id", "PIWIK_CLIENT_SECRET": "env-secret"}):
+        config = import_logs.Configuration(argv)
+
+    assert config.options.client_id == "cli-id"
+    assert config.options.client_secret == "cli-secret"
+
+
+def test_client_secret_via_cli_arg_logs_a_warning(caplog):
+    argv = ["--url=http://localhost", "--client-secret=cli-secret", "logs/common.log"]
+
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("PIWIK_CLIENT_SECRET", None)
+        with caplog.at_level(logging.WARNING):
+            import_logs.Configuration(argv)
+
+    assert any(
+        "PIWIK_CLIENT_SECRET" in record.message and "deprecated" in record.message.lower() for record in caplog.records
+    )
+
+
+def test_client_credentials_absent_without_args_or_environment():
+    argv = ["--url=http://localhost", "logs/common.log"]
+
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("PIWIK_CLIENT_ID", None)
+        os.environ.pop("PIWIK_CLIENT_SECRET", None)
+        config = import_logs.Configuration(argv)
+
+    assert config.options.client_id is None
+    assert config.options.client_secret is None
+
+
+def test_basic_auth_credentials_fall_back_to_environment_variables():
+    argv = ["--url=http://localhost", "logs/common.log"]
+
+    with patch.dict(os.environ, {"PIWIK_AUTH_USER": "env-user", "PIWIK_AUTH_PASSWORD": "env-password"}):
+        config = import_logs.Configuration(argv)
+
+    assert config.options.auth_user == "env-user"
+    assert config.options.auth_password == "env-password"
+
+
+def test_basic_auth_credentials_cli_args_take_precedence_over_environment():
+    argv = [
+        "--url=http://localhost",
+        "--auth-user=cli-user",
+        "--auth-password=cli-password",
+        "logs/common.log",
+    ]
+
+    with patch.dict(os.environ, {"PIWIK_AUTH_USER": "env-user", "PIWIK_AUTH_PASSWORD": "env-password"}):
+        config = import_logs.Configuration(argv)
+
+    assert config.options.auth_user == "cli-user"
+    assert config.options.auth_password == "cli-password"
+
+
+def test_auth_password_via_cli_arg_logs_a_warning(caplog):
+    argv = ["--url=http://localhost", "--auth-password=cli-password", "logs/common.log"]
+
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("PIWIK_AUTH_PASSWORD", None)
+        with caplog.at_level(logging.WARNING):
+            import_logs.Configuration(argv)
+
+    assert any(
+        "PIWIK_AUTH_PASSWORD" in record.message and "deprecated" in record.message.lower() for record in caplog.records
+    )
+
+
+def test_basic_auth_credentials_absent_without_args_or_environment():
+    argv = ["--url=http://localhost", "logs/common.log"]
+
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("PIWIK_AUTH_USER", None)
+        os.environ.pop("PIWIK_AUTH_PASSWORD", None)
+        config = import_logs.Configuration(argv)
+
+    assert config.options.auth_user is None
+    assert config.options.auth_password is None
+
+
 # UrlHelper tests
 def test_urlhelper_convert_array_args():
     def _test(input, expected):
