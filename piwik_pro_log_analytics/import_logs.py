@@ -1524,8 +1524,7 @@ class Configuration:
             return api_result
         else:
             fatal_error(
-                "OAuth authentication failed. Make sure that --client-id and --client-secret options are provided"
-                " (or the PIWIK_CLIENT_ID / PIWIK_CLIENT_SECRET environment variables are set)."
+                "OAuth authentication failed. Make sure that PIWIK_CLIENT_ID and PIWIK_CLIENT_SECRET are set."
             )
 
     def get_resolver(self):
