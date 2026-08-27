@@ -1523,9 +1523,7 @@ class Configuration:
 
             return api_result
         else:
-            fatal_error(
-                "OAuth authentication failed. Make sure that PIWIK_CLIENT_ID and PIWIK_CLIENT_SECRET are set."
-            )
+            fatal_error("OAuth authentication failed. Make sure that PIWIK_CLIENT_ID and PIWIK_CLIENT_SECRET are set.")
 
     def get_resolver(self):
         if self.options.site_id:
